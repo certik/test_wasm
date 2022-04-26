@@ -1,9 +1,7 @@
 <html>
  <head>
 <script type="text/javascript">
-const fs = require('fs');
-const wasmBuffer = fs.readFileSync('./test.wasm');
-WebAssembly.instantiate(wasmBuffer).then(wasmModule => {
+WebAssembly.instantiateStreaming(fetch('test.wasm')).then(wasmModule => {
     // Exported function live under instance.exports
     const get_const_val = wasmModule.instance.exports.get_const_val;
     const add_two_nums = wasmModule.instance.exports.add_two_nums;
