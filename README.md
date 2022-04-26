@@ -7,3 +7,9 @@ Run:
     python -m http.server
 
 Open: http://localhost:8000/
+
+Then open a JavaScript console and you should see:
+
+    -10
+    -1
+    Success!
