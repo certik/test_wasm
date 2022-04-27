@@ -1,3 +1,11 @@
+# Approach 1
+To test `t4.cpp`:
+
+    g++ t4.cpp && ./a.out && node test.js
+
+---
+
+# Approach 2
 Run:
 
     conda create -n wasm python
