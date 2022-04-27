@@ -50,6 +50,24 @@ class WASMAssembler:
         self.code += bytearray([0x00, 0x00, 0x00, 0x00]) # Length placeholder
         return len_idx
 
+    def emit_i32_const(self, i):
+        self.emit_b8(0x41)
+        self.emit_i32(i)
+
+    def emit_end(self):
+        self.emit_b8(0x0b)
+
+    def emit_local_get(self, i):
+        self.emit_b8(0x20)
+        self.emit_u32(i)
+
+    def emit_i32_add(self):
+        self.emit_b8(0x6a)
+
+    def emit_call(self, idx):
+        self.emit_b8(0x10)
+        self.emit_u32(idx)
+
 
 # -----------------------------------------------------------------------------
 # Functions to emit WASM sections
@@ -98,9 +116,8 @@ def emit_function_1(a):
     # Local vars
     a.emit_u32(0)
     # Instructions
-    a.emit_b8(0x41)
-    a.emit_i32(-10)
-    a.emit_b8(0x0b)
+    a.emit_i32_const(-10)
+    a.emit_end()
     a.fixup_len(len_idx)
 
 def emit_function_2(a):
@@ -108,15 +125,12 @@ def emit_function_2(a):
     # Local vars
     a.emit_u32(0)
     # Instructions
-    a.emit_b8(0x20)
-    a.emit_u32(0)
-    a.emit_b8(0x20)
-    a.emit_u32(1)
-    a.emit_b8(0x6a)
-    a.emit_b8(0x10)
-    a.emit_u32(0)
-    a.emit_b8(0x6a)
-    a.emit_b8(0x0b)
+    a.emit_local_get(0)
+    a.emit_local_get(1)
+    a.emit_i32_add()
+    a.emit_call(0)
+    a.emit_i32_add()
+    a.emit_end()
     a.fixup_len(len_idx)
 
 def emit_code_section(a):
