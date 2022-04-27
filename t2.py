@@ -11,6 +11,18 @@ f64 = 0x7C
 def emit_u32(code, i):
     code += leb128.u.encode(i)
 
+def emit_u32_4b(code, i):
+    """
+    Encodes the integer `i` using LEB128 and adds trailing zeros to always
+    occupy 4 bytes.
+    """
+    num = leb128.u.encode(i)
+    num_4b = bytearray([0x80, 0x80, 0x80, 0x00])
+    assert len(num) <= 4
+    for i in range(len(num)):
+        num_4b[i] |= num[i]
+    code += num_4b
+
 def emit_fn_type(code, param_types, return_types):
     code += bytearray([0x60])
     emit_u32(code, len(param_types))
@@ -25,7 +37,7 @@ def emit_type_section(code):
     emit_fn_type(section, [i32, i32], [i32])
 
     emit_u32(code, 1)
-    emit_u32(code, len(section))
+    emit_u32_4b(code, len(section))
     code += section
 
 def emit_function_section(code):
@@ -36,7 +48,7 @@ def emit_function_section(code):
     section += type_ids
 
     emit_u32(code, 3)
-    emit_u32(code, len(section))
+    emit_u32_4b(code, len(section))
     code += section
 
 def emit_export_fn(code, name, idx):
@@ -53,7 +65,7 @@ def emit_export_section(code):
     emit_export_fn(section, "add_two_nums", 1)
 
     emit_u32(code, 7)
-    emit_u32(code, len(section))
+    emit_u32_4b(code, len(section))
     code += section
 
 def emit_var_list(code, vars):
@@ -64,7 +76,7 @@ def emit_fn_code(code, local_vars, code1):
     fn_code = bytearray()
     emit_var_list(fn_code, local_vars)
     fn_code += code1
-    emit_u32(code, len(fn_code))
+    emit_u32_4b(code, len(fn_code))
     code += fn_code
 
 def emit_code_section(code):
@@ -85,7 +97,7 @@ def emit_code_section(code):
     emit_fn_code(section, [], expr2)
 
     emit_u32(code, 10)
-    emit_u32(code, len(section))
+    emit_u32_4b(code, len(section))
     code += section
 
 
