@@ -13,3 +13,9 @@ Then open a JavaScript console and you should see:
     -10
     -1
     Success!
+
+To test `t4.py`:
+
+    python t4.py
+    cp test4.wasm test.wasm
+    python -m http.server
