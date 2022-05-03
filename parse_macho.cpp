@@ -9,6 +9,11 @@
  *
  * This file provides a straightforward self-contained reader (no
  * dependencies).
+ *
+ * One can print the sections of a Mach-O file using:
+ *
+ * otool -lV test.x
+ *
  */
 
 #define MH_MAGIC_64 0xfeedfacf
