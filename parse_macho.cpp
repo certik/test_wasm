@@ -7,6 +7,10 @@
  *
  * https://web.archive.org/web/20090901205800/http://developer.apple.com/mac/library/documentation/DeveloperTools/Conceptual/MachORuntime/Reference/reference.html#//apple_ref/c/tag/segment_command_64
  *
+ * Another nice introduction is at:
+ *
+ * https://h3adsh0tzz.com/2020/01/macho-file-format/
+ *
  * This file provides a straightforward self-contained reader (no
  * dependencies).
  *
