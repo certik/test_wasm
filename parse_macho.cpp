@@ -175,45 +175,52 @@ int main() {
     std::cout << "sizeofcmds: " << pheader->sizeofcmds << std::endl;
     size_t idx = sizeof(mach_header_64);
     for (size_t ncmd=0; ncmd < pheader->ncmds; ncmd++) {
-        std::cout << "Load command " << ncmd << std::endl;
+        std::cout << "Load command " << std::setfill(' ')
+            << std::setw(2) << ncmd << " ";
         load_command *pcmd = (load_command*)(&data[idx]);
         if (pcmd->cmd == LC_UUID) {
+            std::cout << "LC_UUID" << std::endl;
             uuid_command *p = (uuid_command*)(&data[idx]);
-            std::cout << "  uuid: " << uuid_to_str(p->uuid) << std::endl;
+            std::cout << "    UUID: " << uuid_to_str(p->uuid) << std::endl;
         } else if (pcmd->cmd == LC_SEGMENT_64) {
+            std::cout << "LC_SEGMENT_64" << std::endl;
             segment_command *p = (segment_command*)(&data[idx]);
-            std::cout << "  segment: " << p->segname << std::endl;
+            std::cout << "    Segment name: " << p->segname << std::endl;
         } else if (pcmd->cmd == LC_SYMTAB) {
+            std::cout << "LC_SYMTAB" << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);
-            std::cout << "  symtab number of symbols: " << p->nsyms <<std::endl;
+            std::cout << "    Number of symbols: " << p->nsyms <<std::endl;
         } else if (pcmd->cmd == LC_DYSYMTAB) {
+            std::cout << "LC_DYSYMTAB" << std::endl;
             dysymtab_command *p = (dysymtab_command*)(&data[idx]);
-            std::cout << "  dynamic linking symtab number of local symbols: " << p->nlocalsym <<std::endl;
+            std::cout << "    Number of local symbols: " << p->nlocalsym <<std::endl;
         } else if (pcmd->cmd == LC_LOAD_DYLIB) {
+            std::cout << "LC_LOAD_DYLIB" << std::endl;
             dylib_command *p = (dylib_command*)(&data[idx]);
             size_t str_idx = idx+p->dylib.name.offset;
             std::string str = (char *)(&data[str_idx]);
-            std::cout << "  dylib: " << str <<std::endl;
+            std::cout << "    Dylib name: " << str <<std::endl;
         } else if (pcmd->cmd == LC_LOAD_DYLINKER) {
-            std::cout << "  LC_LOAD_DYLINKER" << std::endl;
+            std::cout << "LC_LOAD_DYLINKER" << std::endl;
         } else if (pcmd->cmd == LC_CODE_SIGNATURE) {
-            std::cout << "  LC_CODE_SIGNATURE" << std::endl;
+            std::cout << "LC_CODE_SIGNATURE" << std::endl;
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
-            std::cout << "  LC_FUNCTION_STARTS" << std::endl;
+            std::cout << "LC_FUNCTION_STARTS" << std::endl;
         } else if (pcmd->cmd == LC_DATA_IN_CODE) {
-            std::cout << "  LC_DATA_IN_CODE" << std::endl;
+            std::cout << "LC_DATA_IN_CODE" << std::endl;
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
-            std::cout << "  LC_SOURCE_VERSION" << std::endl;
+            std::cout << "LC_SOURCE_VERSION" << std::endl;
         } else if (pcmd->cmd == LC_BUILD_VERSION) {
-            std::cout << "  LC_BUILD_VERSION" << std::endl;
+            std::cout << "LC_BUILD_VERSION" << std::endl;
         } else if (pcmd->cmd == LC_MAIN) {
-            std::cout << "  LC_MAIN" << std::endl;
+            std::cout << "LC_MAIN" << std::endl;
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
-            std::cout << "  LC_DYLD_EXPORTS_TRIE" << std::endl;
+            std::cout << "LC_DYLD_EXPORTS_TRIE" << std::endl;
         } else if (pcmd->cmd == LC_DYLD_CHAINED_FIXUPS) {
-            std::cout << "  LC_DYLD_CHAINED_FIXUPS" << std::endl;
+            std::cout << "LC_DYLD_CHAINED_FIXUPS" << std::endl;
         } else {
-            std::cout << "  type: " << pcmd->cmd << std::endl;
+            std::cout << "UNKNOWN" << std::endl;
+            std::cout << "    type: " << pcmd->cmd << std::endl;
         }
 
         idx += pcmd->cmdsize;
