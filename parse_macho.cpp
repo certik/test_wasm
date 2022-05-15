@@ -71,6 +71,22 @@ int main() {
             std::cout << "    initprot: " << perm2str(p->initprot) << " (" << p->initprot << ")" << std::endl;
             std::cout << "    nsects: " << p->nsects << std::endl;
             std::cout << "    flags: " << p->flags << std::endl;
+            for (size_t nsection=0; nsection < p->nsects; nsection++) {
+                size_t section_idx = idx + sizeof(segment_command_64) + nsection*sizeof(section_64);
+                section_64 *s = (section_64*)(&data[section_idx]);
+                std::cout << "    Section " << nsection << std::endl;
+                std::cout << "        sectname: " << s->sectname << std::endl;
+                std::cout << "        segname: " << s->segname << std::endl;
+                std::cout << "        addr: 0x" << std::hex << s->addr << std::dec << std::endl;
+                std::cout << "        size: 0x" << std::hex << s->size << std::dec << std::endl;
+                std::cout << "        offset: " << s->offset << std::endl;
+                std::cout << "        align: " << s->align << std::endl;
+                std::cout << "        reloff: " << s->reloff << std::endl;
+                std::cout << "        nreloc: " << s->nreloc << std::endl;
+                std::cout << "        flags: " << s->flags << std::endl;
+                std::cout << "        reserved1: " << s->reserved1 << std::endl;
+                std::cout << "        reserved2: " << s->reserved2 << std::endl;
+            }
         } else if (pcmd->cmd == LC_SYMTAB) {
             std::cout << "LC_SYMTAB" << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);

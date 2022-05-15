@@ -62,6 +62,20 @@ struct segment_command_64 {
     uint32_t flags;
 };
 
+struct section_64 {
+    char sectname[16];
+    char segname[16];
+    uint64_t addr;
+    uint64_t size;
+    uint32_t offset;
+    uint32_t align;
+    uint32_t reloff;
+    uint32_t nreloc;
+    uint32_t flags;
+    uint32_t reserved1;
+    uint32_t reserved2;
+};
+
 struct symtab_command {
     uint32_t cmd;
     uint32_t cmdsize;
