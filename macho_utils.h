@@ -52,10 +52,10 @@ struct segment_command {
     uint32_t cmd;
     uint32_t cmdsize;
     char     segname[16];
-    uint32_t vmaddr;
-    uint32_t vmsize;
-    uint32_t fileoff;
-    uint32_t filesize;
+    uint64_t vmaddr;
+    uint64_t vmsize;
+    uint64_t fileoff;
+    uint64_t filesize;
     uint32_t maxprot;
     uint32_t initprot;
     uint32_t nsects;

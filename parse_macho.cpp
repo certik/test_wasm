@@ -63,8 +63,8 @@ int main() {
             segment_command *p = (segment_command*)(&data[idx]);
             std::cout << "    cmdsize: " << p->cmdsize << std::endl;
             std::cout << "    segname: " << p->segname << std::endl;
-            std::cout << "    vmaddr: " << p->vmaddr << std::endl;
-            std::cout << "    vmsize: " << p->vmsize << std::endl;
+            std::cout << "    vmaddr: " << std::hex << p->vmaddr << std::endl;
+            std::cout << "    vmsize: " << std::hex << p->vmsize << std::endl;
             std::cout << "    fileoff: " << p->fileoff << std::endl;
             std::cout << "    filesize: " << p->filesize << std::endl;
             std::cout << "    maxprot: " << p->maxprot << std::endl;
