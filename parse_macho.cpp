@@ -61,6 +61,7 @@ int main() {
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
             segment_command *p = (segment_command*)(&data[idx]);
+            std::cout << "    cmdsize: " << p->cmdsize << std::endl;
             std::cout << "    segname: " << p->segname << std::endl;
             std::cout << "    vmaddr: " << p->vmaddr << std::endl;
             std::cout << "    vmsize: " << p->vmsize << std::endl;

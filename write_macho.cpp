@@ -63,6 +63,34 @@ int main() {
     segment.flags = 0;
     vec_append(data, (uint8_t*)&segment, sizeof(segment));
 
+    // LC_SEGMENT_64
+    segment.cmd = LC_SEGMENT_64;
+    segment.cmdsize = 152;
+    set_string(segment.segname, "__DATA_CONST");
+    segment.vmaddr = 16384;
+    segment.vmsize = 1;
+    segment.fileoff = 16384;
+    segment.filesize = 0;
+    segment.maxprot = 16384;
+    segment.initprot = 0;
+    segment.nsects = 16384;
+    segment.flags = 0;
+    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+
+    // LC_SEGMENT_64
+    segment.cmd = LC_SEGMENT_64;
+    segment.cmdsize = 72;
+    set_string(segment.segname, "__LINKEDIT");
+    segment.vmaddr = 32768;
+    segment.vmsize = 1;
+    segment.fileoff = 16384;
+    segment.filesize = 0;
+    segment.maxprot = 32768;
+    segment.initprot = 0;
+    segment.nsects = 658;
+    segment.flags = 0;
+    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+
     write_file("test2.x", data);
 
     std::cout << "Done." << std::endl;
