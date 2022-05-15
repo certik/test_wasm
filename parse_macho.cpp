@@ -1,6 +1,7 @@
 #include <iostream>
-#include <fstream>
 #include <vector>
+
+#include "macho_utils.h"
 
 /*
  * The Mach-O format is documented at:
@@ -20,24 +21,6 @@
  *
  */
 
-#define MH_MAGIC_64 0xfeedfacf
-#define CPU_ARCH_ABI64 0x01000000
-#define CPU_TYPE_ARM 12
-#define CPU_TYPE_ARM64 (CPU_TYPE_ARM | CPU_ARCH_ABI64)
-#define LC_UUID                27
-#define LC_SEGMENT_64          25
-#define LC_SYMTAB              2
-#define LC_DYSYMTAB            11
-#define LC_LOAD_DYLIB          12
-#define LC_LOAD_DYLINKER       14
-#define LC_CODE_SIGNATURE      29
-#define LC_FUNCTION_STARTS     38
-#define LC_DATA_IN_CODE        41
-#define LC_SOURCE_VERSION      42
-#define LC_BUILD_VERSION       50
-#define LC_MAIN                2147483688
-#define LC_DYLD_EXPORTS_TRIE   2147483699
-#define LC_DYLD_CHAINED_FIXUPS 2147483700
 
 #define ASSERT(cond)                                                  \
     {                                                                          \
@@ -50,129 +33,22 @@
         }                                                                      \
     }
 
-
-struct mach_header_64 {
-    uint32_t magic;
-    uint32_t cputype;
-    uint32_t cpusubtype;
-    uint32_t filetype;
-    uint32_t ncmds;
-    uint32_t sizeofcmds;
-    uint32_t flags;
-    uint32_t reserved;
-};
-
-struct load_command {
-   uint32_t cmd;
-   uint32_t cmdsize;
-};
-
-struct uuid_command
-   {
-   uint32_t cmd;
-   uint32_t cmdsize;
-   uint8_t uuid[16];
-};
-
-struct segment_command {
-    uint32_t cmd;
-    uint32_t cmdsize;
-    char     segname[16];
-    uint32_t vmaddr;
-    uint32_t vmsize;
-    uint32_t fileoff;
-    uint32_t filesize;
-    uint32_t maxprot;
-    uint32_t initprot;
-    uint32_t nsects;
-    uint32_t flags;
-};
-
-struct symtab_command {
-    uint32_t cmd;
-    uint32_t cmdsize;
-    uint32_t symoff;
-    uint32_t nsyms;
-    uint32_t stroff;
-    uint32_t strsize;
-};
-
-struct dysymtab_command {
-    uint32_t cmd;
-    uint32_t cmdsize;
-    uint32_t ilocalsym;
-    uint32_t nlocalsym;
-    uint32_t iextdefsym;
-    uint32_t nextdefsym;
-    uint32_t iundefsym;
-    uint32_t nundefsym;
-    uint32_t tocoff;
-    uint32_t ntoc;
-    uint32_t modtaboff;
-    uint32_t nmodtab;
-    uint32_t extrefsymoff;
-    uint32_t nextrefsyms;
-    uint32_t indirectsymoff;
-    uint32_t nindirectsyms;
-    uint32_t extreloff;
-    uint32_t nextrel;
-    uint32_t locreloff;
-    uint32_t nlocrel;
-};
-
-union lc_str {
-    uint32_t offset;
-};
-
-struct dylib {
-    union lc_str name;
-    uint32_t timestamp;
-    uint32_t current_version;
-    uint32_t compatibility_version;
-};
-
-struct dylib_command {
-    uint32_t cmd;
-    uint32_t cmdsize;
-    struct dylib dylib;
-};
-
-bool read_file(const std::string &filename, std::vector<uint8_t> &data)
-{
-    std::ifstream ifs(filename.c_str(), std::ios::in | std::ios::binary
-            | std::ios::ate);
-
-    std::ifstream::pos_type filesize = ifs.tellg();
-    if (filesize < 0) return false;
-
-    ifs.seekg(0, std::ios::beg);
-
-    data.resize(filesize);
-    char *p = (char*)(&data[0]);
-    ifs.read(p, filesize);
-    return true;
-}
-
-std::string uuid_to_str(uint8_t uuid[16]) {
-    char str[37] = {};
-    sprintf(str,
-    "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
-        uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
-        uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14],
-        uuid[15]
-    );
-    return str;
-}
-
 int main() {
     std::vector<uint8_t> data;
     read_file("test.x", data);
-    std::cout << data.size() << std::endl;
+    std::cout << "File size: " << data.size() << std::endl;
     mach_header_64 *pheader = (mach_header_64*)(&data[0]);
     ASSERT(pheader->magic == MH_MAGIC_64)
     ASSERT(pheader->cputype == CPU_TYPE_ARM64)
-    std::cout << "ncmds: " << pheader->ncmds << std::endl;
-    std::cout << "sizeofcmds: " << pheader->sizeofcmds << std::endl;
+    std::cout << "Mach-O Header" << std::endl;
+    std::cout << "    magic: " << pheader->magic << std::endl;
+    std::cout << "    cputype: " << pheader->cputype << std::endl;
+    std::cout << "    cpusubtype: " << pheader->cpusubtype << std::endl;
+    std::cout << "    filetype: " << pheader->filetype << std::endl;
+    std::cout << "    ncmds: " << pheader->ncmds << std::endl;
+    std::cout << "    sizeofcmds: " << pheader->sizeofcmds << std::endl;
+    std::cout << "    flags: " << pheader->flags << std::endl;
+    std::cout << "    reserved: " << pheader->reserved << std::endl;
     size_t idx = sizeof(mach_header_64);
     for (size_t ncmd=0; ncmd < pheader->ncmds; ncmd++) {
         std::cout << "Load command " << std::setfill(' ')
@@ -185,7 +61,15 @@ int main() {
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
             segment_command *p = (segment_command*)(&data[idx]);
-            std::cout << "    Segment name: " << p->segname << std::endl;
+            std::cout << "    segname: " << p->segname << std::endl;
+            std::cout << "    vmaddr: " << p->vmaddr << std::endl;
+            std::cout << "    vmsize: " << p->vmsize << std::endl;
+            std::cout << "    fileoff: " << p->fileoff << std::endl;
+            std::cout << "    filesize: " << p->filesize << std::endl;
+            std::cout << "    maxprot: " << p->maxprot << std::endl;
+            std::cout << "    initprot: " << p->initprot << std::endl;
+            std::cout << "    nsects: " << p->nsects << std::endl;
+            std::cout << "    flags: " << p->flags << std::endl;
         } else if (pcmd->cmd == LC_SYMTAB) {
             std::cout << "LC_SYMTAB" << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);
