@@ -49,6 +49,20 @@ int main() {
     segment.flags = 0;
     vec_append(data, (uint8_t*)&segment, sizeof(segment));
 
+    // LC_SEGMENT_64
+    segment.cmd = LC_SEGMENT_64;
+    segment.cmdsize = 392;
+    set_string(segment.segname, "__TEXT");
+    segment.vmaddr = 0;
+    segment.vmsize = 1;
+    segment.fileoff = 16384;
+    segment.filesize = 0;
+    segment.maxprot = 0;
+    segment.initprot = 0;
+    segment.nsects = 16384;
+    segment.flags = 0;
+    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+
     write_file("test2.x", data);
 
     std::cout << "Done." << std::endl;
