@@ -35,7 +35,7 @@ int main() {
     vec_append(data, (uint8_t*)&header, sizeof(header));
 
     // LC_SEGMENT_64
-    segment_command segment;
+    segment_command_64 segment;
     segment.cmd = LC_SEGMENT_64;
     segment.cmdsize = 72;
     set_string(segment.segname, "__PAGEZERO");

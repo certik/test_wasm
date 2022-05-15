@@ -60,7 +60,7 @@ int main() {
             std::cout << "    UUID: " << uuid_to_str(p->uuid) << std::endl;
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
-            segment_command *p = (segment_command*)(&data[idx]);
+            segment_command_64 *p = (segment_command_64*)(&data[idx]);
             std::cout << "    cmdsize: " << p->cmdsize << std::endl;
             std::cout << "    segname: " << p->segname << std::endl;
             std::cout << "    vmaddr: " << std::hex << p->vmaddr << std::endl;

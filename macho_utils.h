@@ -48,7 +48,7 @@ struct uuid_command
    uint8_t uuid[16];
 };
 
-struct segment_command {
+struct segment_command_64 {
     uint32_t cmd;
     uint32_t cmdsize;
     char     segname[16];
