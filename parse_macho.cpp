@@ -36,12 +36,19 @@
 int main() {
     std::vector<uint8_t> data;
     read_file("test.x", data);
-    std::cout << data.size() << std::endl;
+    std::cout << "File size: " << data.size() << std::endl;
     mach_header_64 *pheader = (mach_header_64*)(&data[0]);
     ASSERT(pheader->magic == MH_MAGIC_64)
     ASSERT(pheader->cputype == CPU_TYPE_ARM64)
-    std::cout << "ncmds: " << pheader->ncmds << std::endl;
-    std::cout << "sizeofcmds: " << pheader->sizeofcmds << std::endl;
+    std::cout << "Mach-O Header" << std::endl;
+    std::cout << "    magic: " << pheader->magic << std::endl;
+    std::cout << "    cputype: " << pheader->cputype << std::endl;
+    std::cout << "    cpusubtype: " << pheader->cpusubtype << std::endl;
+    std::cout << "    filetype: " << pheader->filetype << std::endl;
+    std::cout << "    ncmds: " << pheader->ncmds << std::endl;
+    std::cout << "    sizeofcmds: " << pheader->sizeofcmds << std::endl;
+    std::cout << "    flags: " << pheader->flags << std::endl;
+    std::cout << "    reserved: " << pheader->reserved << std::endl;
     size_t idx = sizeof(mach_header_64);
     for (size_t ncmd=0; ncmd < pheader->ncmds; ncmd++) {
         std::cout << "Load command " << std::setfill(' ')
