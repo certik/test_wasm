@@ -129,6 +129,13 @@ bool read_file(const std::string &filename, std::vector<uint8_t> &data)
     return true;
 }
 
+void write_file(const std::string &filename, const std::vector<uint8_t> &data)
+{
+    std::ofstream ofs(filename.c_str(), std::ios::out | std::ios::binary);
+    ofs.write((char*)(&data[0]), data.size());
+    ofs.close();
+}
+
 // Convert 16 byte UUID to a string
 std::string uuid_to_str(uint8_t uuid[16]) {
     char str[37] = {};
