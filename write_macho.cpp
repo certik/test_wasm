@@ -40,9 +40,9 @@ int main() {
     segment.cmdsize = 72;
     set_string(segment.segname, "__PAGEZERO");
     segment.vmaddr = 0;
-    segment.vmsize = 0;
+    segment.vmsize = 0x100000000;
     segment.fileoff = 0;
-    segment.filesize = 1;
+    segment.filesize = 0;
     segment.maxprot = 0;
     segment.initprot = 0;
     segment.nsects = 0;
@@ -53,13 +53,13 @@ int main() {
     segment.cmd = LC_SEGMENT_64;
     segment.cmdsize = 392;
     set_string(segment.segname, "__TEXT");
-    segment.vmaddr = 0;
-    segment.vmsize = 1;
-    segment.fileoff = 16384;
-    segment.filesize = 0;
-    segment.maxprot = 0;
-    segment.initprot = 0;
-    segment.nsects = 16384;
+    segment.vmaddr = 0x100000000;
+    segment.vmsize = 0x4000;
+    segment.fileoff = 0;
+    segment.filesize = 16384;
+    segment.maxprot = 5;
+    segment.initprot = 5;
+    segment.nsects = 4;
     segment.flags = 0;
     vec_append(data, (uint8_t*)&segment, sizeof(segment));
 
@@ -67,27 +67,27 @@ int main() {
     segment.cmd = LC_SEGMENT_64;
     segment.cmdsize = 152;
     set_string(segment.segname, "__DATA_CONST");
-    segment.vmaddr = 16384;
-    segment.vmsize = 1;
+    segment.vmaddr = 0x100004000;
+    segment.vmsize = 0x4000;
     segment.fileoff = 16384;
-    segment.filesize = 0;
-    segment.maxprot = 16384;
-    segment.initprot = 0;
-    segment.nsects = 16384;
-    segment.flags = 0;
+    segment.filesize = 16384;
+    segment.maxprot = 3;
+    segment.initprot = 3;
+    segment.nsects = 1;
+    segment.flags = 16;
     vec_append(data, (uint8_t*)&segment, sizeof(segment));
 
     // LC_SEGMENT_64
     segment.cmd = LC_SEGMENT_64;
     segment.cmdsize = 72;
     set_string(segment.segname, "__LINKEDIT");
-    segment.vmaddr = 32768;
-    segment.vmsize = 1;
-    segment.fileoff = 16384;
-    segment.filesize = 0;
-    segment.maxprot = 32768;
-    segment.initprot = 0;
-    segment.nsects = 658;
+    segment.vmaddr = 0x100008000;
+    segment.vmsize = 0x4000;
+    segment.fileoff = 32768;
+    segment.filesize = 658;
+    segment.maxprot = 1;
+    segment.initprot = 1;
+    segment.nsects = 0;
     segment.flags = 0;
     vec_append(data, (uint8_t*)&segment, sizeof(segment));
 
