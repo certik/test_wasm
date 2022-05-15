@@ -147,3 +147,23 @@ std::string uuid_to_str(uint8_t uuid[16]) {
     );
     return str;
 }
+
+std::string perm2str(uint32_t perm) {
+    std::string s;
+    if (perm & 1) {
+        s += "r";
+    } else {
+        s += "-";
+    }
+    if (perm & (1 << 1)) {
+        s += "w";
+    } else {
+        s += "-";
+    }
+    if (perm & (1 << 2)) {
+        s += "x";
+    } else {
+        s += "-";
+    }
+    return s;
+}
