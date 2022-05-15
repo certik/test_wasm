@@ -48,18 +48,32 @@ struct uuid_command
    uint8_t uuid[16];
 };
 
-struct segment_command {
+struct segment_command_64 {
     uint32_t cmd;
     uint32_t cmdsize;
     char     segname[16];
-    uint32_t vmaddr;
-    uint32_t vmsize;
-    uint32_t fileoff;
-    uint32_t filesize;
+    uint64_t vmaddr;
+    uint64_t vmsize;
+    uint64_t fileoff;
+    uint64_t filesize;
     uint32_t maxprot;
     uint32_t initprot;
     uint32_t nsects;
     uint32_t flags;
+};
+
+struct section_64 {
+    char sectname[16];
+    char segname[16];
+    uint64_t addr;
+    uint64_t size;
+    uint32_t offset;
+    uint32_t align;
+    uint32_t reloff;
+    uint32_t nreloc;
+    uint32_t flags;
+    uint32_t reserved1;
+    uint32_t reserved2;
 };
 
 struct symtab_command {
@@ -146,4 +160,24 @@ std::string uuid_to_str(uint8_t uuid[16]) {
         uuid[15]
     );
     return str;
+}
+
+std::string perm2str(uint32_t perm) {
+    std::string s;
+    if (perm & 1) {
+        s += "r";
+    } else {
+        s += "-";
+    }
+    if (perm & (1 << 1)) {
+        s += "w";
+    } else {
+        s += "-";
+    }
+    if (perm & (1 << 2)) {
+        s += "x";
+    } else {
+        s += "-";
+    }
+    return s;
 }
