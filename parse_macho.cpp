@@ -67,8 +67,8 @@ int main() {
             std::cout << "    vmsize: 0x" << std::hex << p->vmsize << std::dec << std::endl;
             std::cout << "    fileoff: " << p->fileoff << std::endl;
             std::cout << "    filesize: " << p->filesize << std::endl;
-            std::cout << "    maxprot: " << perm2str(p->maxprot) << std::endl;
-            std::cout << "    initprot: " << perm2str(p->initprot) << std::endl;
+            std::cout << "    maxprot: " << perm2str(p->maxprot) << " (" << p->maxprot << ")" << std::endl;
+            std::cout << "    initprot: " << perm2str(p->initprot) << " (" << p->initprot << ")" << std::endl;
             std::cout << "    nsects: " << p->nsects << std::endl;
             std::cout << "    flags: " << p->flags << std::endl;
         } else if (pcmd->cmd == LC_SYMTAB) {
