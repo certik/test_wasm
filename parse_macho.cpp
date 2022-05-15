@@ -61,7 +61,15 @@ int main() {
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
             segment_command *p = (segment_command*)(&data[idx]);
-            std::cout << "    Segment name: " << p->segname << std::endl;
+            std::cout << "    segname: " << p->segname << std::endl;
+            std::cout << "    vmaddr: " << p->vmaddr << std::endl;
+            std::cout << "    vmsize: " << p->vmsize << std::endl;
+            std::cout << "    fileoff: " << p->fileoff << std::endl;
+            std::cout << "    filesize: " << p->filesize << std::endl;
+            std::cout << "    maxprot: " << p->maxprot << std::endl;
+            std::cout << "    initprot: " << p->initprot << std::endl;
+            std::cout << "    nsects: " << p->nsects << std::endl;
+            std::cout << "    flags: " << p->flags << std::endl;
         } else if (pcmd->cmd == LC_SYMTAB) {
             std::cout << "LC_SYMTAB" << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);
