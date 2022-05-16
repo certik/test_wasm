@@ -33,6 +33,14 @@
         }                                                                      \
     }
 
+void print_bytes(uint8_t *data, size_t size) {
+    std::cout << "DATA (" << size << "):";
+    for (size_t i=0; i < size; i++) {
+        std::cout << " " << std::hex << (uint64_t)data[i] << std::dec;
+    }
+    std::cout << std::endl;
+}
+
 int main() {
     std::vector<uint8_t> data;
     read_file("test.x", data);
@@ -86,6 +94,16 @@ int main() {
                 std::cout << "        flags: " << s->flags << std::endl;
                 std::cout << "        reserved1: " << s->reserved1 << std::endl;
                 std::cout << "        reserved2: " << s->reserved2 << std::endl;
+
+                std::cout << "        ";
+                print_bytes(&data[s->offset], s->size);
+
+                if (std::string(s->sectname) == "__cstring") {
+                    std::cout << "        C string: \""
+                        << std::string((char*)&data[s->offset], s->size)
+                        << "\"" << std::endl;
+
+                }
             }
         } else if (pcmd->cmd == LC_SYMTAB) {
             std::cout << "LC_SYMTAB" << std::endl;
