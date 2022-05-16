@@ -41,6 +41,36 @@ void print_bytes(uint8_t *data, size_t size) {
     std::cout << std::endl;
 }
 
+void decode_instructions(uint32_t *data, size_t n) {
+    std::cout << "        Instructions: " << std::endl;
+    for (size_t i=0; i < n; i++) {
+        uint32_t inst = data[i];
+        uint32_t cond = inst >> 28;
+        uint32_t op1 = (inst << 4) >> 29;
+
+        std::cout << "            " << std::setw(2) << i << std::setw(0)
+            << " " << std::hex << inst << std::dec << " ";
+        if (cond == 0b1111) {
+            std::cout << "UC";
+        } else {
+            std::cout << " C";
+        }
+        std::cout << " " << op1;
+        std::cout << " " << (  (inst << 4) >> 25  );
+        if ((inst << 4) >> 25 == 0b0000010) {
+            std::cout << " " << "SUB";
+        }
+        if ((inst << 4) >> 25 == 0b0000100) {
+            std::cout << " " << "ADD";
+        }
+        //if (((inst >> 21) & 0b1111111) == 0b0011101) {
+        if (((inst >> 20) & 0b11111111) == 0b00110000) {
+            std::cout << " " << "MOV";
+        }
+        std::cout << std::endl;
+    }
+}
+
 int main() {
     std::vector<uint8_t> data;
     read_file("test.x", data);
@@ -102,7 +132,10 @@ int main() {
                     std::cout << "        C string: \""
                         << std::string((char*)&data[s->offset], s->size)
                         << "\"" << std::endl;
-
+                } else if (std::string(s->sectname) == "__text") {
+                    uint64_t n = s->size/4;
+                    ASSERT(n*4 == s->size)
+                    decode_instructions((uint32_t*)&data[s->offset], n);
                 }
             }
         } else if (pcmd->cmd == LC_SYMTAB) {
