@@ -41,10 +41,21 @@ void print_bytes(uint8_t *data, size_t size) {
     std::cout << std::endl;
 }
 
+uint32_t static inline string_to_uint32(const char *s) {
+    // The cast from signed char to unsigned char is important,
+    // otherwise the signed char shifts return wrong value for negative numbers
+    const uint8_t *p = (const unsigned char*)s;
+    return (((uint32_t)p[0]) << 24) |
+           (((uint32_t)p[1]) << 16) |
+           (((uint32_t)p[2]) <<  8) |
+                       p[3];
+}
+
+
 void decode_instructions(uint32_t *data, size_t n) {
     std::cout << "        Instructions: " << std::endl;
     for (size_t i=0; i < n; i++) {
-        uint32_t inst = data[i];
+        uint32_t inst = string_to_uint32((char*)&data[i]);
         uint32_t cond = inst >> 28;
         uint32_t op1 = (inst << 4) >> 29;
 
