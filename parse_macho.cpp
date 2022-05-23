@@ -19,6 +19,11 @@
  *
  * otool -lV test.x
  *
+ * Print machine code in the text section and disassemble:
+ *
+ * otool -t test.x
+ * otool -tv test.x
+ *
  * ARM instructions encoding reference manual:
  *
  * https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/ARM-Instruction-Set-Encoding/ARM-instruction-set-encoding
