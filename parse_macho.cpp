@@ -64,7 +64,8 @@ uint32_t static inline string_to_uint32(const char *s) {
 void decode_instructions(uint32_t *data, size_t n) {
     std::cout << "        Instructions: " << std::endl;
     for (size_t i=0; i < n; i++) {
-        uint32_t inst = string_to_uint32((char*)&data[i]);
+        //uint32_t inst = string_to_uint32((char*)&data[i]);
+        uint32_t inst = data[i];
         uint32_t cond = inst >> 28;
         uint32_t op1 = (inst << 4) >> 29;
 
@@ -83,8 +84,7 @@ void decode_instructions(uint32_t *data, size_t n) {
         if ((inst << 4) >> 25 == 0b0000100) {
             std::cout << " " << "ADD";
         }
-        //if (((inst >> 21) & 0b1111111) == 0b0011101) {
-        if (((inst >> 20) & 0b11111111) == 0b00110000) {
+        if ((inst << 4) >> 25 == 0b0001101) {
             std::cout << " " << "MOV";
         }
         std::cout << std::endl;
