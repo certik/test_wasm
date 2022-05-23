@@ -19,6 +19,10 @@
  *
  * otool -lV test.x
  *
+ * ARM instructions encoding reference manual:
+ *
+ * https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/ARM-Instruction-Set-Encoding/ARM-instruction-set-encoding
+ *
  */
 
 
