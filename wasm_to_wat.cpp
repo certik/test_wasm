@@ -53,25 +53,6 @@ int32_t decode_signed_leb128(uint32_t &offset) {
     return result;
 }
 
-// int32_t decode_signed_leb128(uint32_t &offset) {
-//     int32_t result = 0;
-//     uint32_t shift = 0u;
-//     uint32_t size = 32;
-//     uint32_t byte;
-
-//     for (uint32_t i = 0; i < num.size(); i++) {
-//         uint32_t byte = num[i];
-//         result |= (byte & 0x7f) << shift;
-//         shift += 7;
-//     }
-
-//     if ((shift < size) && (byte & 0x40)) {
-//         result |= (~0 << shift);
-//     }
-
-//     return result;
-// }
-
 void load_file(std::string filename) {
     std::ifstream file(filename, std::ios::binary);
     file.seekg(0, std::ios::end);
