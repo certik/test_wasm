@@ -21,12 +21,19 @@
  *
  * Print machine code in the text section and disassemble:
  *
- * otool -t test.x
- * otool -tv test.x
+ * otool -tjv test.x
  *
  * ARM instructions encoding reference manual:
  *
  * https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/ARM-Instruction-Set-Encoding/ARM-instruction-set-encoding
+ *
+ * Register names are encoded as 5 bit (0..31) numbers:
+ *
+ *  0 .. x0
+ *   ....
+ * 29 .. x29
+ * 30 .. x30
+ * 31 .. sp
  *
  */
 
