@@ -155,64 +155,6 @@ void decode_code_section(uint32_t offset) {
 
         uint8_t cur_byte = wasm_bytes[offset++];
         while (cur_byte != 0x0B) {
-            switch (cur_byte) {
-                case 0x20: {  // local.get
-                    uint32_t index = read_unsinged_num(offset);
-                    codes[i].instructions.push_back(
-                        std::make_unique<LocalGetInst>(cur_byte, index));
-                    break;
-                }
-                case 0x21: {  // local.set
-                    uint32_t index = read_unsinged_num(offset);
-                    codes[i].instructions.push_back(
-                        std::make_unique<LocalSetInst>(cur_byte, index));
-                    break;
-                }
-                case 0x6A: {  // i32.add
-                    codes[i].instructions.push_back(
-                        std::make_unique<I32AddInst>(cur_byte));
-                    break;
-                }
-                case 0x6B: {  // i32.sub
-                    codes[i].instructions.push_back(
-                        std::make_unique<I32SubInst>(cur_byte));
-                    break;
-                }
-                case 0x6C: {  // i32.mul
-                    codes[i].instructions.push_back(
-                        std::make_unique<I32MulInst>(cur_byte));
-                    break;
-                }
-                case 0x6D: {  // i32.div_s
-                    codes[i].instructions.push_back(
-                        std::make_unique<I32DivInst>(cur_byte));
-                    break;
-                }
-                case 0x41: {  // i32.const
-                    DEBUG("i32.const");
-                    int val = read_singed_num(offset);
-                    DEBUG("val: " + std::to_string(val));
-                    codes[i].instructions.push_back(
-                        std::make_unique<I32ConstInst>(cur_byte, val));
-                    break;
-                }
-                case 0x10: {  // call func
-                    uint32_t index = read_unsinged_num(offset);
-                    codes[i].instructions.push_back(
-                        std::make_unique<CallInst>(cur_byte, index));
-                    break;
-                }
-                case 0x0F:{
-                    codes[i].instructions.push_back(
-                        std::make_unique<ReturnInst>(cur_byte));
-                    break;
-                }
-                default: {
-                    std::cout << "Error: Instruction " << std::to_string(cur_byte)
-                              << " not supported" << std::endl;
-                    exit(1);
-                }
-            }
             cur_byte = wasm_bytes[offset++];
         }
     }
@@ -299,9 +241,7 @@ std::string get_wat() {
             }
         }
         result += ")";
-        for (uint32_t j = 0; j < codes[i].instructions.size(); j++) {
-            result += "\n        " + codes[i].instructions[j]->to_string();
-        }
+        
         result += "\n    )";
     }
 
