@@ -11,31 +11,12 @@ std::unordered_map<uint8_t, std::string> kind_to_string = {
 struct FuncType {
     std::vector<uint8_t> param_types;
     std::vector<uint8_t> result_types;
-
-    // std::string to_string() {
-    //     std::string result = "(param";
-    //     for (auto &type : param_types) {
-    //         result += " " + type_to_string[type];
-    //     }
-    //     result += ") (result";
-    //     for (auto &type : result_types) {
-    //         result += " " + type_to_string[type];
-    //     }
-    //     result += ")";
-    //     return result;
-    // }
 };
 
 struct Export {
     std::string name;
     uint8_t kind;
     uint32_t index;
-
-    // std::string to_string() {
-    //     std::string result =
-    //         "(export " + name + " (" + kind_to_string[kind] + " $" + std::to_string(index) + "))";
-    //     return result;
-    // }
 };
 
 class Instruction {
@@ -138,19 +119,4 @@ struct Code {
     int size;
     std::vector<Local> locals;
     std::vector<std::unique_ptr<Instruction>> instructions;
-
-    // std::string to_string() {
-    //     std::string result = "(local";
-    //     for (auto &local : locals) {
-    //         for(uint32_t i = 0; i < local.count; i++) {
-    //             result += " " + type_to_string[local.type];
-    //         }
-    //     }
-    //     result += ")(";
-    //     for (auto &inst : instructions) {
-    //         result += "(" + inst.to_string() + ")";
-    //     }
-    //     result += ")";
-    //     return result;
-    // }
 };
