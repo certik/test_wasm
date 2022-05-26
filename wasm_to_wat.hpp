@@ -94,3 +94,172 @@ int32_t read_singed_num(uint32_t &offset) {
 uint32_t read_unsinged_num(uint32_t &offset) {
     return decode_unsigned_leb128(offset);
 }
+
+bool isBetween(uint8_t val, uint8_t min, uint8_t max) {
+    return (val >= min && val <= max);
+}
+
+void visit_ControlInstruction(std::string &result, std::string &indent,
+                              uint32_t &offset) {
+    uint8_t cur_byte = wasm_bytes[offset++];
+    switch (cur_byte) {
+        case 0x0F: {  // return
+            result += indent + "return";
+            break;
+        }
+        case 0x10: {  // call function
+            uint32_t func_index = read_unsinged_num(offset);
+            result += indent + "call " + std::to_string(func_index);
+            break;
+        }
+        default: {
+            std::cout << "Control Instruction (" << std::hex << cur_byte
+                      << std::dec;
+            std::cout << ") Not yet supported" << std::endl;
+            break;
+        }
+    }
+
+    return;
+}
+
+void visit_ReferenceInstruction(std::string &result, std::string &indent,
+                                uint32_t &offset) {
+    // not yet supported
+    return;
+}
+
+void visit_ParametricInstruction(std::string &result, std::string &indent,
+                                 uint32_t &offset) {
+    // not yet supported
+    return;
+}
+
+void visit_VariableInstruction(std::string &result, std::string &indent,
+                               uint32_t &offset) {
+    uint8_t cur_byte = wasm_bytes[offset++];
+    uint32_t var_index = read_unsinged_num(offset);
+
+    switch (cur_byte) {
+        case 0x20: {  // local.get
+            result += indent + "local.get " + std::to_string(var_index);
+            break;
+        }
+        case 0x21: {  // local.set
+            result += indent + "local.set " + std::to_string(var_index);
+            break;
+        }
+        default: {
+            std::cout << "Variable Instruction (" << std::hex << cur_byte
+                      << std::dec;
+            std::cout << ") Not yet supported" << std::endl;
+            break;
+        }
+    }
+
+    return;
+}
+
+void visit_TableInstruction(std::string &result, std::string &indent,
+                            uint32_t &offset) {
+    // not yet supported
+    return;
+}
+
+void visit_MemoryInstruction(std::string &result, std::string &indent,
+                             uint32_t &offset) {
+    // not yet supported
+    return;
+}
+
+void visit_NumericInstruction(std::string &result, std::string &indent,
+                              uint32_t &offset) {
+    uint8_t cur_byte = wasm_bytes[offset++];
+    switch (cur_byte) {
+        case 0x41: {  // i32.const
+            int32_t value = read_singed_num(offset);
+            result += indent + "i32.const " + std::to_string(value);
+            break;
+        }
+        // case 0x42:{ // i64.const
+
+        //     break;
+        // }
+        // case 0x43:{ // f32.const
+
+        //     break;
+        // }
+        // case 0x44:{ // f64.const
+
+        //     break;
+        // }
+        case 0x6A: {  // i32.add
+            result += indent + "i32.add";
+            break;
+        }
+        case 0x6B: {  // i32.sub
+            result += indent + "i32.sub";
+            break;
+        }
+        case 0x6C: {  // i32.mul
+            result += indent + "i32.mul";
+            break;
+        }
+        case 0x6D: {  // i32.div_s
+            result += indent + "i32.div_s";
+            break;
+        }
+        default: {
+            std::cout << "Numeric Instruction (" << std::hex << cur_byte
+                      << std::dec;
+            std::cout << ") Not yet supported" << std::endl;
+            break;
+        }
+    }
+
+    return;
+}
+
+void visit_VectorInstruction(std::string &result, std::string &indent,
+                             uint32_t &offset) {
+    // not yet supported
+    return;
+}
+
+void visit_Instructions(std::string &result, std::string &indent,
+                       uint32_t &offset) {
+    uint8_t cur_byte = wasm_bytes[offset];
+
+    if (cur_byte == 0x0B) { // End of Expressions
+        return;
+    }
+
+    if (isBetween(cur_byte, 0x00, 0x04) ||
+        isBetween(cur_byte, 0x0C, 0x11)) {  // Control Instructions
+        visit_ControlInstruction(result, indent, offset);
+    }
+    else if (isBetween(cur_byte, 0xD0, 0xD2)) {  // Reference Instructions
+        visit_ReferenceInstruction(result, indent, offset);
+    }
+    else if (isBetween(cur_byte, 0x1A, 0x1C)) {  // Parametric Instructions
+        visit_ParametricInstruction(result, indent, offset);
+    }
+    else if (isBetween(cur_byte, 0x20, 0x24)) {  // Variable Instructions
+        visit_VariableInstruction(result, indent, offset);
+    }
+    else if (isBetween(cur_byte, 0x25,0x26)) {  // Table Instructions (0xFC is currently dropped)
+        visit_TableInstruction(result, indent, offset);
+    }
+    else if (isBetween(cur_byte, 0x28, 0x29) ||
+               isBetween(cur_byte, 0x2A, 0x40)) {  // Memory Instructions (0xFC is currently dropped)
+        visit_MemoryInstruction(result, indent, offset);
+    }
+    else if (isBetween(cur_byte, 0x41, 0xC4)) {  // Numeric Instructions (0xFC is currently dropped)
+        visit_NumericInstruction(result, indent, offset);
+    }
+    else if (cur_byte == 0xFD) {  // Vector Instructions
+        visit_VectorInstruction(result, indent, offset);
+    }
+
+    visit_Instructions(result, indent, offset);
+}
