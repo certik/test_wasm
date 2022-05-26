@@ -35,6 +35,7 @@ struct Local {
 struct Code {
     int size;
     std::vector<Local> locals;
+    uint32_t insts_start_index;
 };
 
 std::vector<uint8_t> wasm_bytes;

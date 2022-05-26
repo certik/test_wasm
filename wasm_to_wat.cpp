@@ -87,8 +87,10 @@ void decode_code_section(uint32_t offset) {
         }
         DEBUG("Exiting loop");
 
+        codes[i].insts_start_index = offset;
+
         uint8_t cur_byte = wasm_bytes[offset++];
-        while (cur_byte != 0x0B) {
+        while (cur_byte != 0x0B) { // omit the instructions
             cur_byte = wasm_bytes[offset++];
         }
     }
