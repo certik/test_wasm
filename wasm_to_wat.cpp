@@ -177,6 +177,9 @@ std::string get_wat() {
             }
         }
         result += ")";
+
+        std::string inst_indent = "\n        ";
+        visit_Instructions(result, inst_indent, codes[i].insts_start_index);
         
         result += "\n    )";
     }
