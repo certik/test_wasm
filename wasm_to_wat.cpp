@@ -3,7 +3,7 @@
 #include <fstream>
 #include <iomanip>
 #include <cassert>
-#include "wasm_to_wat.hpp"
+#include "wasm_to_wat.h"
 
 void decode_type_section(uint32_t offset) {
     // read type section contents
@@ -178,8 +178,12 @@ std::string get_wat() {
         }
         result += ")";
 
-        std::string inst_indent = "\n        ";
-        visit_Instructions(result, inst_indent, codes[i].insts_start_index);
+        {
+            WATVisitor v = WATVisitor();
+            v.indent = "\n        ";
+            v.decode_instructions(codes[i].insts_start_index, wasm_bytes);
+            result += v.src;
+        }
         
         result += "\n    )";
     }
