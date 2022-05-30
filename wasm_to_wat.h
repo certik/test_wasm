@@ -164,7 +164,7 @@ class BaseWASMVisitor {
 
     void visit_ElemDrop(uint32_t /*elemidx*/) { throw LFortran::LFortranException("visit_ElemDrop() not implemented"); }
 
-    void visit_TableCopy(uint32_t /*tableidx*/, uint32_t /*tableidx*/) { throw LFortran::LFortranException("visit_TableCopy() not implemented"); }
+    void visit_TableCopy(uint32_t /*des_tableidx*/, uint32_t /*src_tableidx*/) { throw LFortran::LFortranException("visit_TableCopy() not implemented"); }
 
     void visit_TableGrow(uint32_t /*tableidx*/) { throw LFortran::LFortranException("visit_TableGrow() not implemented"); }
 
@@ -1813,9 +1813,9 @@ class BaseWASMVisitor {
                             break;
                         }
                         case 14U: {
-                            uint32_t tableidx = read_unsigned_num(offset);
-                            uint32_t tableidx = read_unsigned_num(offset);
-                            self().visit_TableCopy(tableidx, tableidx);
+                            uint32_t des_tableidx = read_unsigned_num(offset);
+                            uint32_t src_tableidx = read_unsigned_num(offset);
+                            self().visit_TableCopy(des_tableidx, src_tableidx);
                             break;
                         }
                         case 15U: {
