@@ -89,7 +89,7 @@ void decode_code_section(uint32_t offset) {
         codes[i].insts_start_index = offset;
 
         uint8_t cur_byte = wasm_bytes[offset++];
-        while (cur_byte != 0x0B) { // omit the instructions
+        while (cur_byte != 0x0B) {  // omit the instructions
             cur_byte = wasm_bytes[offset++];
         }
     }
@@ -144,8 +144,7 @@ void hexdump(void *ptr, int buflen) {
         }
         printf(" ");
         for (j = 0; j < 16; j++) {
-            if (i + j < buflen)
-                printf("%c", isprint(buf[i + j]) ? buf[i + j] : '.');
+            if (i + j < buflen) printf("%c", isprint(buf[i + j]) ? buf[i + j] : '.');
         }
         printf("\n");
     }
@@ -157,16 +156,12 @@ std::string get_wat() {
         result += "\n    (func $" + std::to_string(i);
         result += "\n        (param";
         uint32_t func_index = type_indices[i];
-        for (uint32_t j = 0; j < func_types[func_index].param_types.size();
-             j++) {
-            result +=
-                " " + type_to_string[func_types[func_index].param_types[j]];
+        for (uint32_t j = 0; j < func_types[func_index].param_types.size(); j++) {
+            result += " " + type_to_string[func_types[func_index].param_types[j]];
         }
         result += ") (result";
-        for (uint32_t j = 0; j < func_types[func_index].result_types.size();
-             j++) {
-            result +=
-                " " + type_to_string[func_types[func_index].result_types[j]];
+        for (uint32_t j = 0; j < func_types[func_index].result_types.size(); j++) {
+            result += " " + type_to_string[func_types[func_index].result_types[j]];
         }
         result += ")";
         result += "\n        (local";
@@ -183,14 +178,12 @@ std::string get_wat() {
             v.decode_instructions(codes[i].insts_start_index, wasm_bytes);
             result += v.src;
         }
-        
+
         result += "\n    )";
     }
 
     for (uint32_t i = 0; i < exports.size(); i++) {
-        result += "\n    (export \"" + exports[i].name + "\" (" +
-                  kind_to_string[exports[i].kind] + " $" +
-                  std::to_string(exports[i].index) + "))";
+        result += "\n    (export \"" + exports[i].name + "\" (" + kind_to_string[exports[i].kind] + " $" + std::to_string(exports[i].index) + "))";
     }
     result += "\n)";
 
