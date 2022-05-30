@@ -6,7 +6,7 @@
 
 void decode_type_section(uint32_t offset) {
     // read type section contents
-    uint32_t no_of_func_types = read_unsinged_num(offset);
+    uint32_t no_of_func_types = read_unsigned_num(offset);
     DEBUG("no_of_func_types: " + std::to_string(no_of_func_types));
     func_types.resize(no_of_func_types);
 
@@ -18,14 +18,14 @@ void decode_type_section(uint32_t offset) {
         offset++;
 
         // read result type 1
-        uint32_t no_of_params = read_unsinged_num(offset);
+        uint32_t no_of_params = read_unsigned_num(offset);
         func_types[i].param_types.resize(no_of_params);
 
         for (uint32_t j = 0; j < no_of_params; j++) {
             func_types[i].param_types[j] = wasm_bytes[offset++];
         }
 
-        uint32_t no_of_results = read_unsinged_num(offset);
+        uint32_t no_of_results = read_unsigned_num(offset);
         func_types[i].result_types.resize(no_of_results);
 
         for (uint32_t j = 0; j < no_of_results; j++) {
@@ -36,23 +36,23 @@ void decode_type_section(uint32_t offset) {
 
 void decode_function_section(uint32_t offset) {
     // read function section contents
-    uint32_t no_of_indices = read_unsinged_num(offset);
+    uint32_t no_of_indices = read_unsigned_num(offset);
     DEBUG("no_of_indices: " + std::to_string(no_of_indices));
     type_indices.resize(no_of_indices);
 
     for (uint32_t i = 0; i < no_of_indices; i++) {
-        type_indices[i] = read_unsinged_num(offset);
+        type_indices[i] = read_unsigned_num(offset);
     }
 }
 
 void decode_export_section(uint32_t offset) {
     // read export section contents
-    uint32_t no_of_exports = read_unsinged_num(offset);
+    uint32_t no_of_exports = read_unsigned_num(offset);
     DEBUG("no_of_exports: " + std::to_string(no_of_exports));
     exports.resize(no_of_exports);
 
     for (uint32_t i = 0; i < no_of_exports; i++) {
-        uint32_t name_size = read_unsinged_num(offset);
+        uint32_t name_size = read_unsigned_num(offset);
         exports[i].name.resize(name_size);
         for (uint32_t j = 0; j < name_size; j++) {
             exports[i].name[j] = wasm_bytes[offset++];
@@ -60,26 +60,26 @@ void decode_export_section(uint32_t offset) {
         DEBUG("export name: " + exports[i].name);
         exports[i].kind = wasm_bytes[offset++];
         DEBUG("export kind: " + std::to_string(exports[i].kind));
-        exports[i].index = read_unsinged_num(offset);
+        exports[i].index = read_unsigned_num(offset);
         DEBUG("export index: " + std::to_string(exports[i].index));
     }
 }
 
 void decode_code_section(uint32_t offset) {
     // read code section contents
-    uint32_t no_of_codes = read_unsinged_num(offset);
+    uint32_t no_of_codes = read_unsigned_num(offset);
     DEBUG("no_of_codes: " + std::to_string(no_of_codes));
     codes.resize(no_of_codes);
 
     for (uint32_t i = 0; i < no_of_codes; i++) {
-        codes[i].size = read_unsinged_num(offset);
-        uint32_t no_of_locals = read_unsinged_num(offset);
+        codes[i].size = read_unsigned_num(offset);
+        uint32_t no_of_locals = read_unsigned_num(offset);
         DEBUG("no_of_locals: " + std::to_string(no_of_locals));
         codes[i].locals.resize(no_of_locals);
 
         DEBUG("Entering loop");
         for (uint32_t j = 0U; j < no_of_locals; j++) {
-            codes[i].locals[j].count = read_unsinged_num(offset);
+            codes[i].locals[j].count = read_unsigned_num(offset);
             DEBUG("count: " + std::to_string(codes[i].locals[j].count));
             codes[i].locals[j].type = wasm_bytes[offset++];
             DEBUG("type: " + std::to_string(codes[i].locals[j].type));
@@ -101,8 +101,8 @@ void decode_wasm() {
     uint32_t index = 8U;
 
     while (index < wasm_bytes.size()) {
-        uint32_t section_id = read_unsinged_num(index);
-        uint32_t section_size = read_unsinged_num(index);
+        uint32_t section_id = read_unsigned_num(index);
+        uint32_t section_size = read_unsigned_num(index);
         switch (section_id) {
             case 1U:
                 decode_type_section(index);

@@ -89,11 +89,11 @@ void load_file(std::string filename) {
     file.close();
 }
 
-int32_t read_singed_num(uint32_t &offset) {
+int32_t read_signed_num(uint32_t &offset) {
     return decode_signed_leb128(offset);
 }
 
-uint32_t read_unsinged_num(uint32_t &offset) {
+uint32_t read_unsigned_num(uint32_t &offset) {
     return decode_unsigned_leb128(offset);
 }
 
