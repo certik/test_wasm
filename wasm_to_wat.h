@@ -11,6 +11,13 @@
 #define DEBUG(s)
 #endif
 
+// this is temporary, we may not need this when we integrate with LFortran
+namespace LFortran{
+    std::string LFortranException(std::string msg){
+        return "LFortranException: " + msg;
+    }
+}
+
 std::unordered_map<uint8_t, std::string> type_to_string = {
         {0x7F, "i32"}, {0x7E, "i64"}, {0x7D, "f32"}, {0x7C, "f64"}};
 
