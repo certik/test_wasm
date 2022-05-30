@@ -1,6 +1,5 @@
 #include <iostream>
 #include <vector>
-#include <fstream>
 #include <iomanip>
 #include <cassert>
 #include "wasm_to_wat.h"
