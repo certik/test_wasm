@@ -4,6 +4,17 @@
 #include <cassert>
 #include "wasm_to_wat.h"
 
+// #define WAT_DEBUG
+
+#ifdef WAT_DEBUG
+#define DEBUG(s) std::cout << s << std::endl
+#else
+#define DEBUG(s)
+#endif
+
+
+using namespace LFortran;
+
 void decode_type_section(uint32_t offset) {
     // read type section contents
     uint32_t no_of_func_types = read_unsigned_num(offset);
@@ -173,9 +184,9 @@ std::string get_wat() {
         result += ")";
 
         {
-            WATVisitor v = WATVisitor();
+            WASM_INSTS_VISITOR::WATVisitor v = WASM_INSTS_VISITOR::WATVisitor();
             v.indent = "\n        ";
-            v.decode_instructions(codes[i].insts_start_index, wasm_bytes);
+            v.decode_instructions(codes[i].insts_start_index);
             result += v.src;
         }
 
