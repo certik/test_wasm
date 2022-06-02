@@ -84,6 +84,7 @@ void decode_code_section(uint32_t offset) {
 
     for (uint32_t i = 0; i < no_of_codes; i++) {
         codes[i].size = read_unsigned_num(offset);
+        uint32_t code_start_offset = offset;
         uint32_t no_of_locals = read_unsigned_num(offset);
         DEBUG("no_of_locals: " + std::to_string(no_of_locals));
         codes[i].locals.resize(no_of_locals);
@@ -99,10 +100,8 @@ void decode_code_section(uint32_t offset) {
 
         codes[i].insts_start_index = offset;
 
-        uint8_t cur_byte = wasm_bytes[offset++];
-        while (cur_byte != 0x0B) {  // omit the instructions
-            cur_byte = wasm_bytes[offset++];
-        }
+        // skip offset to directly the end of instructions
+        offset = code_start_offset + codes[i].size;
     }
 }
 
