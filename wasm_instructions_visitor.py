@@ -146,8 +146,8 @@ param_type = {
 def parse_param_info(param_info):
     type_info, name, val = param_info.split(":")
     type = param_type[type_info]
-    read_fun = param_read_function[type]
-    return {"type": type, "read_func": read_fun, "name": name, "val": val}
+    read_func = param_read_function[type]
+    return {"type": type, "read_func": read_func, "name": name, "val": val}
 
 def parse_instructions(instructions):
     instructions_info = []
