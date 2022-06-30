@@ -67,6 +67,21 @@ Section C5.6 A64 Base Instruction Descriptions, Alphabetical list
 In ARM Architecture Reference Manual: ARMv8, for ARMv8-A architecture profile
 */
 std::string decode_instruction(uint32_t inst) {
+    if        (((inst >> 25) & 0b1100) == 0b0000) {
+        return "unallocated";
+    } else if (((inst >> 25) & 0b1110) == 0b1000) {
+        return "data processing - immediate";
+    } else if (((inst >> 25) & 0b1110) == 0b1010) {
+        return "Branch, exception generation and system instructions";
+    } else if (((inst >> 25) & 0b0101) == 0b0100) {
+        return "Loads and stores";
+    } else if (((inst >> 25) & 0b0111) == 0b0101) {
+        return "Data processing - register";
+    } else if (((inst >> 25) & 0b0111) == 0b0111) {
+        return "Data processing - SIMD and floating point";
+    } else {
+        return "??";
+    }
     if (inst >> 12 == 0xd65f0) {
         // C5.6.148 RET
         return "ret";
