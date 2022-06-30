@@ -62,8 +62,13 @@ uint32_t static inline string_to_uint32(const char *s) {
 }
 */
 
+/*
+Section C5.6 A64 Base Instruction Descriptions, Alphabetical list
+In ARM Architecture Reference Manual: ARMv8, for ARMv8-A architecture profile
+*/
 std::string decode_instruction(uint32_t inst) {
     if (inst >> 12 == 0xd65f0) {
+        // C5.6.148 RET
         return "ret";
     }
     return "?";
