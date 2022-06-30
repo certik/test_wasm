@@ -67,10 +67,31 @@ Section C5.6 A64 Base Instruction Descriptions, Alphabetical list
 In ARM Architecture Reference Manual: ARMv8, for ARMv8-A architecture profile
 */
 std::string decode_instruction(uint32_t inst) {
+    // C3.1 A64 instruction index by encoding
     if        (((inst >> 25) & 0b1100) == 0b0000) {
+        // Unallocated
         return "unallocated";
     } else if (((inst >> 25) & 0b1110) == 0b1000) {
-        return "data processing - immediate";
+        // C3.4 Data processing - immediate
+        if        (((inst >> 23) & 0b110) == 0b000) {
+            // C3.4.6 PC-rel. addressing
+            return "C3.4.6 PC-rel. addressing";
+        } else if (((inst >> 23) & 0b110) == 0b010) {
+            // C3.4.1 Add/subtract (immediate)
+            return "C3.4.1 Add/subtract (immediate)";
+        } else if (((inst >> 23) & 0b111) == 0b100) {
+            // C3.4.4 Logical (immediate)
+            return "C3.4.4 Logical (immediate)";
+        } else if (((inst >> 23) & 0b111) == 0b101) {
+            // C3.4.5 Move wide (immediate)
+            return "C3.4.5 Move wide (immediate)";
+        } else if (((inst >> 23) & 0b111) == 0b110) {
+            // C3.4.2 Bitfield
+            return "C3.4.2 Bitfield";
+        } else if (((inst >> 23) & 0b111) == 0b111) {
+            // C3.4.3 Extract
+            return "C3.4.3 Extract";
+        }
     } else if (((inst >> 25) & 0b1110) == 0b1010) {
         return "Branch, exception generation and system instructions";
     } else if (((inst >> 25) & 0b0101) == 0b0100) {
