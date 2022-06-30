@@ -249,6 +249,7 @@ std::string decode_instruction(uint32_t inst) {
     } else {
         return "??";
     }
+    // TODO: move this up
     if (inst >> 12 == 0xd65f0) {
         // C5.6.148 RET
         return "ret";
