@@ -74,12 +74,16 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     }
     std::cout << "        Instructions in asm, equivalent to `otool -tv text.x`: " << std::endl;
     for (size_t i=0; i < n; i++) {
-        uint32_t inst = string_to_uint32((char*)&data[i]);
+        //uint32_t inst = string_to_uint32((char*)&data[i]);
+        uint32_t inst = data[i];
         uint32_t cond = inst >> 28;
         uint32_t op1 = (inst << 4) >> 29;
 
         std::cout << "            " << std::setw(2) << i << std::setw(0)
-            << " " << std::hex << addr+i*4 << "    " << inst << std::dec << " ";
+            << " " << std::hex << addr+i*4 << "    "
+            << inst
+            << std::dec << " ";
+        /*
         if (cond == 0b1111) {
             std::cout << "UC";
         } else {
@@ -96,6 +100,10 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
         //if (((inst >> 21) & 0b1111111) == 0b0011101) {
         if (((inst >> 20) & 0b11111111) == 0b00110000) {
             std::cout << " " << "MOV";
+        }
+        */
+        if (inst >> 12 == 0xd65f0) {
+            std::cout << "ret";
         }
         std::cout << std::endl;
     }
