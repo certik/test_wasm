@@ -140,6 +140,36 @@ namespace a64 {
         }
         return s;
     }
+
+    std::string movn(uint32_t sf, uint32_t hw, uint32_t imm16, uint32_t Rd) {
+        uint32_t shift = hw*16;
+        std::string s = "movn " + reg(sf, Rd, 1)
+            + ", #" + hex(imm16);
+        if (shift > 0) {
+            s += ", lsl #" + std::to_string(shift);
+        }
+        return s;
+    }
+
+    std::string movz(uint32_t sf, uint32_t hw, uint32_t imm16, uint32_t Rd) {
+        uint32_t shift = hw*16;
+        std::string s = "movz " + reg(sf, Rd, 1)
+            + ", #" + hex(imm16);
+        if (shift > 0) {
+            s += ", lsl #" + std::to_string(shift);
+        }
+        return s;
+    }
+
+    std::string movk(uint32_t sf, uint32_t hw, uint32_t imm16, uint32_t Rd) {
+        uint32_t shift = hw*16;
+        std::string s = "movk " + reg(sf, Rd, 1)
+            + ", #" + hex(imm16);
+        if (shift > 0) {
+            s += ", lsl #" + std::to_string(shift);
+        }
+        return s;
+    }
 }
 
 /*
@@ -183,7 +213,18 @@ std::string decode_instruction(uint32_t inst) {
             return "C3.4.4 Logical (immediate)";
         } else if (((inst >> 23) & 0b111) == 0b101) {
             // C3.4.5 Move wide (immediate)
-            return "C3.4.5 Move wide (immediate)";
+            uint32_t Rd    = (inst >>  0) & 0b11111;
+            uint32_t imm16 = (inst >>  5) & 0xf;
+            uint32_t hw    = (inst >> 21) & 0b11;
+            uint32_t opc   = (inst >> 29) & 0b11;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            if (opc == 0b00) {
+                return a64::movn(sf, hw, imm16, Rd);
+            } else if (opc == 0b10) {
+                return a64::movz(sf, hw, imm16, Rd);
+            } else if (opc == 0b11) {
+                return a64::movk(sf, hw, imm16, Rd);
+            }
         } else if (((inst >> 23) & 0b111) == 0b110) {
             // C3.4.2 Bitfield
             return "C3.4.2 Bitfield";
