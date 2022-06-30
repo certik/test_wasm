@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <sstream>
 
 #include "macho_utils.h"
 
@@ -62,6 +63,56 @@ uint32_t static inline string_to_uint32(const char *s) {
 }
 */
 
+std::string reg(uint32_t sf, uint32_t Rn) {
+    if (Rn == 31) {
+        if (sf == 0) {
+            // 32 bit
+            return "wsp";
+        } else {
+            // 64 bit
+            return "sp";
+        }
+    } else {
+        if (sf == 0) {
+            // 32 bit
+            return "w" + std::to_string(Rn);
+        } else {
+            // 64 bit
+            return "x" + std::to_string(Rn);
+        }
+    }
+}
+
+std::string hex(uint32_t n) {
+    std::stringstream out;
+    out << "0x" << std::hex << n;
+    return out.str();
+}
+
+namespace a64 {
+    std::string add(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
+            uint32_t Rd) {
+        std::string s = "add " + reg(sf, Rd) + ", " + reg(sf, Rn)
+            + ", #" + hex(imm12);
+        if (shift > 0) {
+            s += ", " + std::to_string(shift);
+        }
+        return s;
+    }
+    std::string adds(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
+            uint32_t Rd) {
+        return "adds";
+    }
+    std::string sub(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
+            uint32_t Rd) {
+        return "sub";
+    }
+    std::string subs(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
+            uint32_t Rd) {
+        return "subs";
+    }
+}
+
 /*
 Section C5.6 A64 Base Instruction Descriptions, Alphabetical list
 In ARM Architecture Reference Manual: ARMv8, for ARMv8-A architecture profile
@@ -78,7 +129,26 @@ std::string decode_instruction(uint32_t inst) {
             return "C3.4.6 PC-rel. addressing";
         } else if (((inst >> 23) & 0b110) == 0b010) {
             // C3.4.1 Add/subtract (immediate)
-            return "C3.4.1 Add/subtract (immediate)";
+            uint32_t Rd    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t imm12 = (inst >> 10) & 0b111111111111;
+            uint32_t shift = (inst >> 22) & 0b11;
+            uint32_t S     = (inst >> 29) & 0b1;
+            uint32_t op    = (inst >> 30) & 0b1;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            if (op == 0) {
+                if (S == 0) {
+                    return a64::add(sf, shift, imm12, Rn, Rd);
+                } else {
+                    return a64::adds(sf, shift, imm12, Rn, Rd);
+                }
+            } else {
+                if (S == 0) {
+                    return a64::sub(sf, shift, imm12, Rn, Rd);
+                } else {
+                    return a64::subs(sf, shift, imm12, Rn, Rd);
+                }
+            }
         } else if (((inst >> 23) & 0b111) == 0b100) {
             // C3.4.4 Logical (immediate)
             return "C3.4.4 Logical (immediate)";
