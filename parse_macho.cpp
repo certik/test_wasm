@@ -71,6 +71,12 @@ std::string decode_instruction(uint32_t inst) {
         // C5.6.148 RET
         return "ret";
     }
+    if (inst >> 24 == 0b10101010) {
+        // C5.6.125 MOV (register), sf = 1 (64 bit)
+        uint32_t Rd = inst & 0b11111;
+        uint32_t Rm = (inst >> 16) & 0b11111;
+        return "mov x" + std::to_string(Rd) + ", x" + std::to_string(Rm);
+    }
     return "?";
 }
 
