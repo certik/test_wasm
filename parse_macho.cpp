@@ -61,8 +61,18 @@ uint32_t static inline string_to_uint32(const char *s) {
 }
 
 
-void decode_instructions(uint32_t *data, size_t n) {
-    std::cout << "        Instructions: " << std::endl;
+void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
+    std::cout << "        Instructions in binary (address + code), equivalent to `otool -t test.x`: " << std::endl;
+    for (size_t i=0; i < n; i+=4) {
+        std::cout << "            " << std::hex
+            << addr + i*4 << " "
+            << data[i] << " "
+            << data[i+1] << " "
+            << data[i+2] << " "
+            << data[i+3]
+            << std::dec << std::endl;
+    }
+    std::cout << "        Instructions in asm: " << std::endl;
     for (size_t i=0; i < n; i++) {
         uint32_t inst = string_to_uint32((char*)&data[i]);
         uint32_t cond = inst >> 28;
@@ -155,7 +165,8 @@ int main() {
                 } else if (std::string(s->sectname) == "__text") {
                     uint64_t n = s->size/4;
                     ASSERT(n*4 == s->size)
-                    decode_instructions((uint32_t*)&data[s->offset], n);
+                    decode_instructions((uint32_t*)&data[s->offset], n,
+                        s->addr);
                 }
             }
         } else if (pcmd->cmd == LC_SYMTAB) {
