@@ -77,6 +77,12 @@ std::string decode_instruction(uint32_t inst) {
         uint32_t Rm = (inst >> 16) & 0b11111;
         return "mov x" + std::to_string(Rd) + ", x" + std::to_string(Rm);
     }
+    if (inst >> 23 == 0b010100101) {
+        // C5.6.123 MOV (wide immediate), sf = 0 (32 bit)
+        uint32_t Rd = inst & 0b11111;
+        uint32_t imm16 = (inst >> 5) & 0xFF;
+        return "mov w" + std::to_string(Rd) + ", #" + std::to_string(imm16);
+    }
     if (inst >> 21 == 0b00011011000) {
         // C5.6.133 MUL, sf = 0 (32 bit)
         uint32_t Rd = inst & 0b11111;
