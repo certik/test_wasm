@@ -111,15 +111,30 @@ namespace a64 {
     }
     std::string adds(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
             uint32_t Rd) {
-        return "adds";
+        std::string s = "adds " + reg(sf, Rd, 1) + ", " + reg(sf, Rn, 0)
+            + ", #" + hex(imm12);
+        if (shift > 0) {
+            s += ", " + std::to_string(shift);
+        }
+        return s;
     }
     std::string sub(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
             uint32_t Rd) {
-        return "sub";
+        std::string s = "sub " + reg(sf, Rd, 0) + ", " + reg(sf, Rn, 0)
+            + ", #" + hex(imm12);
+        if (shift > 0) {
+            s += ", " + std::to_string(shift);
+        }
+        return s;
     }
     std::string subs(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
             uint32_t Rd) {
-        return "subs";
+        std::string s = "subs " + reg(sf, Rd, 1) + ", " + reg(sf, Rn, 0)
+            + ", #" + hex(imm12);
+        if (shift > 0) {
+            s += ", " + std::to_string(shift);
+        }
+        return s;
     }
 }
 
