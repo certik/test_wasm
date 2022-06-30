@@ -50,6 +50,7 @@ void print_bytes(uint8_t *data, size_t size) {
     std::cout << std::endl;
 }
 
+/*
 uint32_t static inline string_to_uint32(const char *s) {
     // The cast from signed char to unsigned char is important,
     // otherwise the signed char shifts return wrong value for negative numbers
@@ -59,7 +60,14 @@ uint32_t static inline string_to_uint32(const char *s) {
            (((uint32_t)p[2]) <<  8) |
                        p[3];
 }
+*/
 
+std::string decode_instruction(uint32_t inst) {
+    if (inst >> 12 == 0xd65f0) {
+        return "ret";
+    }
+    return "?";
+}
 
 void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     std::cout << "        Instructions in binary (address + code), equivalent to `otool -t test.x`: " << std::endl;
@@ -74,38 +82,11 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     }
     std::cout << "        Instructions in asm, equivalent to `otool -tv text.x`: " << std::endl;
     for (size_t i=0; i < n; i++) {
-        //uint32_t inst = string_to_uint32((char*)&data[i]);
         uint32_t inst = data[i];
-        uint32_t cond = inst >> 28;
-        uint32_t op1 = (inst << 4) >> 29;
-
         std::cout << "            " << std::setw(2) << i << std::setw(0)
             << " " << std::hex << addr+i*4 << "    "
             << inst
-            << std::dec << " ";
-        /*
-        if (cond == 0b1111) {
-            std::cout << "UC";
-        } else {
-            std::cout << " C";
-        }
-        std::cout << " " << op1;
-        std::cout << " " << (  (inst << 4) >> 25  );
-        if ((inst << 4) >> 25 == 0b0000010) {
-            std::cout << " " << "SUB";
-        }
-        if ((inst << 4) >> 25 == 0b0000100) {
-            std::cout << " " << "ADD";
-        }
-        //if (((inst >> 21) & 0b1111111) == 0b0011101) {
-        if (((inst >> 20) & 0b11111111) == 0b00110000) {
-            std::cout << " " << "MOV";
-        }
-        */
-        if (inst >> 12 == 0xd65f0) {
-            std::cout << "ret";
-        }
-        std::cout << std::endl;
+            << std::dec << " " << decode_instruction(inst) << std::endl;
     }
 }
 
