@@ -94,6 +94,32 @@ std::string decode_instruction(uint32_t inst) {
                 + ", wzr";
         }
     }
+    if (inst >> 24 == 0b01101011) {
+        // C5.6.199 SUBS (shifted register), sf = 0 (32 bit)
+        uint32_t Rd = inst & 0b11111;
+        uint32_t Rn = (inst >> 5) & 0b11111;
+        uint32_t imm6 = (inst >> 10) & 0b111111;
+        uint32_t Rm = (inst >> 16) & 0b11111;
+        uint32_t shift = (inst >> 22) & 0b11;
+        std::string shiftstr;
+        if (imm6 > 0) {
+            shiftstr = ", ";
+            if (shift == 0b00) {
+                shiftstr += "lsl";
+            } else if (shift == 0b01) {
+                shiftstr += "lsr";
+            } else if (shift == 0b10) {
+                shiftstr += "asr";
+            } else {
+                shiftstr += "reserved";
+            }
+            shiftstr += " #" + std::to_string(imm6);
+        }
+        return "subs w" + std::to_string(Rd)
+            + ", w" + std::to_string(Rn)
+            + ", w" + std::to_string(Rm)
+            + shiftstr;
+    }
     return "?";
 }
 
