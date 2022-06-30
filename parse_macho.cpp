@@ -63,14 +63,24 @@ uint32_t static inline string_to_uint32(const char *s) {
 }
 */
 
-std::string reg(uint32_t sf, uint32_t Rn) {
+std::string reg(uint32_t sf, uint32_t Rn, uint32_t zr) {
     if (Rn == 31) {
-        if (sf == 0) {
-            // 32 bit
-            return "wsp";
+        if (zr == 1) {
+            if (sf == 0) {
+                // 32 bit
+                return "wzr";
+            } else {
+                // 64 bit
+                return "xzr";
+            }
         } else {
-            // 64 bit
-            return "sp";
+            if (sf == 0) {
+                // 32 bit
+                return "wsp";
+            } else {
+                // 64 bit
+                return "sp";
+            }
         }
     } else {
         if (sf == 0) {
@@ -92,7 +102,7 @@ std::string hex(uint32_t n) {
 namespace a64 {
     std::string add(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
             uint32_t Rd) {
-        std::string s = "add " + reg(sf, Rd) + ", " + reg(sf, Rn)
+        std::string s = "add " + reg(sf, Rd, 0) + ", " + reg(sf, Rn, 0)
             + ", #" + hex(imm12);
         if (shift > 0) {
             s += ", " + std::to_string(shift);
