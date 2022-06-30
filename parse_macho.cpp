@@ -72,14 +72,14 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
             << data[i+3]
             << std::dec << std::endl;
     }
-    std::cout << "        Instructions in asm: " << std::endl;
+    std::cout << "        Instructions in asm, equivalent to `otool -tv text.x`: " << std::endl;
     for (size_t i=0; i < n; i++) {
         uint32_t inst = string_to_uint32((char*)&data[i]);
         uint32_t cond = inst >> 28;
         uint32_t op1 = (inst << 4) >> 29;
 
         std::cout << "            " << std::setw(2) << i << std::setw(0)
-            << " " << std::hex << inst << std::dec << " ";
+            << " " << std::hex << addr+i*4 << "    " << inst << std::dec << " ";
         if (cond == 0b1111) {
             std::cout << "UC";
         } else {
