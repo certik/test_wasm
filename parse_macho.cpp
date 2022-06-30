@@ -153,6 +153,12 @@ namespace a64 {
 
     std::string movz(uint32_t sf, uint32_t hw, uint32_t imm16, uint32_t Rd) {
         uint32_t shift = hw*16;
+        if (! (imm16 == 0 && hw != 0)) {
+            uint32_t imm = imm16 << shift;
+            std::string s = "mov " + reg(sf, Rd, 1)
+                + ", #" + hex(imm);
+            return s;
+        }
         std::string s = "movz " + reg(sf, Rd, 1)
             + ", #" + hex(imm16);
         if (shift > 0) {
