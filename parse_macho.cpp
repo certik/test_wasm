@@ -102,6 +102,10 @@ std::string hex(uint32_t n) {
 namespace a64 {
     std::string add(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
             uint32_t Rd) {
+        if ((Rd == 0b11111 || Rn == 0b11111) && shift == 0 && imm12 == 0) {
+            std::string s = "mov " + reg(sf, Rd, 0) + ", " + reg(sf, Rn, 0);
+            return s;
+        }
         std::string s = "add " + reg(sf, Rd, 0) + ", " + reg(sf, Rn, 0)
             + ", #" + hex(imm12);
         if (shift > 0) {
