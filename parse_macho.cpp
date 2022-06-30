@@ -162,6 +162,11 @@ int main() {
             std::cout << "LC_SYMTAB" << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);
             std::cout << "    Number of symbols: " << p->nsyms <<std::endl;
+            std::cout << "    symoff: " << p->symoff <<std::endl;
+            std::cout << "    stroff: " << p->stroff <<std::endl;
+            std::cout << "    strsize: " << p->strsize <<std::endl;
+            std::cout << "    stroff/strsize as string: "
+                << std::string((char*)&data[p->stroff], p->strsize) << std::endl;;
         } else if (pcmd->cmd == LC_DYSYMTAB) {
             std::cout << "LC_DYSYMTAB" << std::endl;
             dysymtab_command *p = (dysymtab_command*)(&data[idx]);
