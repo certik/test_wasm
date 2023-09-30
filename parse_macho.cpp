@@ -241,6 +241,7 @@ std::string decode_instruction(uint32_t inst) {
     } else if (((inst >> 25) & 0b1110) == 0b1010) {
         return "Branch, exception generation and system instructions";
     } else if (((inst >> 25) & 0b0101) == 0b0100) {
+        // C3.3 Loads and stores
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
         return "Data processing - register";
@@ -331,6 +332,7 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
             << inst
             << std::dec << " " << decode_instruction(inst) << std::endl;
     }
+    exit(0);
 }
 
 int main() {
