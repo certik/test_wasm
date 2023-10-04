@@ -264,7 +264,7 @@ std::string decode_instruction(uint32_t inst) {
     if (inst >> 23 == 0b010100101) {
         // C5.6.123 MOV (wide immediate), sf = 0 (32 bit)
         uint32_t Rd = inst & 0b11111;
-        uint32_t imm16 = (inst >> 5) & 0xFF;
+        uint32_t imm16 = (inst >> 5) & 0xffff;
         return "mov w" + std::to_string(Rd) + ", #" + std::to_string(imm16);
     }
     if (inst >> 21 == 0b00011011000) {
