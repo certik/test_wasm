@@ -247,8 +247,7 @@ std::string decode_instruction(uint32_t inst) {
         }
     } else if (((inst >> 25) & 0b1110) == 0b1010) {
         // Branch, exception generation and system instructions
-        // TODO: adjust this mask
-        if        (((inst >> 21) & 0b11111) == 0b00000) {
+        if        ((inst & 0xffe0001f) == 0xd4000001) {
             // svc
             uint32_t imm16 = (inst >>  5) & 0xffff;
             return a64::svc(imm16);
