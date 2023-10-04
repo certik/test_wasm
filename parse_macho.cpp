@@ -220,7 +220,7 @@ std::string decode_instruction(uint32_t inst) {
         } else if (((inst >> 23) & 0b111) == 0b101) {
             // C3.4.5 Move wide (immediate)
             uint32_t Rd    = (inst >>  0) & 0b11111;
-            uint32_t imm16 = (inst >>  5) & 0xf;
+            uint32_t imm16 = (inst >>  5) & 0xffff;
             uint32_t hw    = (inst >> 21) & 0b11;
             uint32_t opc   = (inst >> 29) & 0b11;
             uint32_t sf    = (inst >> 31) & 0b1;
