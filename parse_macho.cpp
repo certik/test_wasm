@@ -247,6 +247,8 @@ std::string decode_instruction(uint32_t inst) {
         }
     } else if (((inst >> 25) & 0b1110) == 0b1010) {
         // Branch, exception generation and system instructions
+        // mask:  hex(0b11111111_111_00000000_00000000_111_11)
+        // value: hex(0b11010100_000_00000000_00000000_000_01)
         if        ((inst & 0xffe0001f) == 0xd4000001) {
             // svc
             uint32_t imm16 = (inst >>  5) & 0xffff;
