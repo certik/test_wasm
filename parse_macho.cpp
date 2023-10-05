@@ -182,6 +182,12 @@ namespace a64 {
         return s;
     }
 
+    std::string add2(uint32_t shift, uint32_t Rm, uint32_t imm6, uint32_t Rn,
+            uint32_t Rd) {
+        std::string s = "add " + reg(sf, Rd, 1)
+            + ", #" + hex(imm6);
+    }
+
 }
 
 
@@ -260,7 +266,10 @@ std::string decode_instruction(uint32_t inst) {
         // C3.3 Loads and stores
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
-        return "Data processing - register";
+        if ((inst >> 24) == 0b10001011) {
+            return a64::add(shift, Rm, imm6, Rn, Rd);
+        }
+        return "Data processing - register: " + std::to_string(inst);
     } else if (((inst >> 25) & 0b0111) == 0b0111) {
         return "Data processing - SIMD and floating point";
     } else {
