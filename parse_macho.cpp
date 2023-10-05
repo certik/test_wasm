@@ -334,11 +334,11 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     for (size_t i=0; i < n; i+=4) {
         std::cout << "            " << std::hex
             << addr + i*4 << " "
-            << data[i] << " "
-            << data[i+1] << " "
-            << data[i+2] << " "
-            << data[i+3]
-            << std::dec << std::endl;
+            << data[i];
+        if (i+1 < n) std::cout <<  " " << data[i+1];
+        if (i+2 < n) std::cout <<  " " << data[i+2];
+        if (i+3 < n) std::cout <<  " " << data[i+3];
+        std::cout << std::dec << std::endl;
     }
     std::cout << "        Instructions in asm, equivalent to `otool -tv test.x`: " << std::endl;
     for (size_t i=0; i < n; i++) {
