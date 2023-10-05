@@ -353,7 +353,7 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
 
 int main() {
     std::vector<uint8_t> data;
-    read_file("exit", data);
+    read_file("test.x", data);
     std::cout << "File size: " << data.size() << std::endl;
     mach_header_64 *pheader = (mach_header_64*)(&data[0]);
     ASSERT(pheader->magic == MH_MAGIC_64)
