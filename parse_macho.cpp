@@ -348,7 +348,6 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
             << inst
             << std::dec << " " << decode_instruction(inst) << std::endl;
     }
-    //exit(0);
 }
 
 int main() {
