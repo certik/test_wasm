@@ -218,6 +218,23 @@ namespace a64 {
         return s;
     }
 
+    std::string mul(uint32_t sf, uint32_t Rm, uint32_t Rn, uint32_t Rd) {
+        std::string s = "mul "
+            + reg(sf, Rd, 1) + ", "
+            + reg(sf, Rn, 1) + ", "
+            + reg(sf, Rm, 1);
+        return s;
+    }
+
+    std::string madd(uint32_t sf, uint32_t Rm, uint32_t Ra, uint32_t Rn, uint32_t Rd) {
+        std::string s = "madd "
+            + reg(sf, Rd, 1) + ", "
+            + reg(sf, Rn, 1) + ", "
+            + reg(sf, Rm, 1) + ", "
+            + reg(sf, Ra, 1);
+        return s;
+    }
+
 }
 
 
@@ -314,6 +331,24 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t shift = (inst >> 22) & 0b11;
             uint32_t sf    = (inst >> 31) & 0b1;
             return a64::sub2(sf, shift, Rm, imm6, Rn, Rd);
+        } else if ((inst >> 21) == 0b10011011000) {
+            // C5.6.119 MADD, sf = 1 (64 bit)
+            // C5.6.133 MUL,  sf = 1 (64 bit)
+            uint32_t Rd    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t Ra    = (inst >> 10) & 0b11111;
+            uint32_t o0    = (inst >> 15) & 0b1;
+            uint32_t Rm    = (inst >> 16) & 0b11111;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            if (o0 == 0) {
+                if (Ra == 0b11111) {
+                    return a64::mul(sf, Rm, Rn, Rd);
+                } else {
+                    return a64::madd(sf, Rm, Ra, Rn, Rd);
+                }
+            } else {
+                return "MUL/MADD o0 == 1";
+            }
         }
         return "Data processing - register: " + std::to_string(inst);
     } else if (((inst >> 25) & 0b0111) == 0b0111) {
@@ -337,23 +372,6 @@ std::string decode_instruction(uint32_t inst) {
         uint32_t Rd = inst & 0b11111;
         uint32_t imm16 = (inst >> 5) & 0xffff;
         return "mov w" + std::to_string(Rd) + ", #" + std::to_string(imm16);
-    }
-    if (inst >> 21 == 0b00011011000) {
-        // C5.6.133 MUL, sf = 0 (32 bit)
-        uint32_t Rd = inst & 0b11111;
-        uint32_t Rn = (inst >> 5) & 0b11111;
-        uint32_t Ra = (inst >> 10) & 0b11111;
-        uint32_t Rm = (inst >> 16) & 0b11111;
-        if (Ra == 0b11111) {
-            return "mul w" + std::to_string(Rd)
-                + ", w" + std::to_string(Rn)
-                + ", w" + std::to_string(Rm);
-        } else {
-            return "madd w" + std::to_string(Rd)
-                + ", w" + std::to_string(Rn)
-                + ", w" + std::to_string(Rm)
-                + ", wzr";
-        }
     }
     if (inst >> 24 == 0b01101011) {
         // C5.6.199 SUBS (shifted register), sf = 0 (32 bit)
