@@ -375,6 +375,7 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t Rn    = (inst >>  5) & 0b11111;
             uint32_t imm12 = (inst >> 10) & 0b111111111111;
             uint32_t size  = (inst >> 30) & 0b1;
+            imm12 = imm12 << (2+size);
             return a64::str_imm12(size, imm12, Rn, Rt);
         } else if ((inst & 0xbfe00c00) == 0xb8200800) {
             //            size                 Rm  opt S      Rn    Rt
