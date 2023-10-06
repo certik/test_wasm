@@ -205,6 +205,11 @@ namespace a64 {
         return s;
     }
 
+    std::string ret() {
+        std::string s = "ret";
+        return s;
+    }
+
     std::string decode_shift(uint32_t shift) {
         if (shift == 0b00) {
             return "lsl";
@@ -337,6 +342,9 @@ std::string decode_instruction(uint32_t inst) {
             // svc
             uint32_t imm16 = (inst >>  5) & 0xffff;
             return a64::svc(imm16);
+        } else if (inst >> 12 == 0xd65f0) {
+            // C5.6.148 RET
+            return a64::ret();
         } else {
             return "Branch, exception generation and system instructions";
         }
@@ -396,10 +404,6 @@ std::string decode_instruction(uint32_t inst) {
         return "??";
     }
     // TODO: move this up
-    if (inst >> 12 == 0xd65f0) {
-        // C5.6.148 RET
-        return "ret";
-    }
     if (inst >> 24 == 0b10101010) {
         // C5.6.125 MOV (register), sf = 1 (64 bit)
         uint32_t Rd = inst & 0b11111;
