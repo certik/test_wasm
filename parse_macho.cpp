@@ -99,7 +99,8 @@ std::string reg(uint32_t sf, uint32_t Rn, uint32_t zr) {
         } else {
             if (sf == 0) {
                 // 32 bit
-                return "wsp";
+                //return "wsp";
+                return "sp";
             } else {
                 // 64 bit
                 return "sp";
@@ -274,7 +275,7 @@ namespace a64 {
     std::string str_imm12(uint32_t sf, uint32_t imm12, uint32_t Rn, uint32_t Rt) {
         std::string s = "str "
             + reg(sf, Rt, 1) + ", ["
-            + reg(sf, Rn, 1) + ", #"
+            + reg(sf, Rn, 0) + ", #"
             + hex(imm12) + "]";
         return s;
     }
@@ -374,9 +375,10 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t Rt    = (inst >>  0) & 0b11111;
             uint32_t Rn    = (inst >>  5) & 0b11111;
             uint32_t imm12 = (inst >> 10) & 0b111111111111;
-            uint32_t size  = (inst >> 30) & 0b1;
-            imm12 = imm12 << (2+size);
-            return a64::str_imm12(size, imm12, Rn, Rt);
+            uint32_t sf  = (inst >> 30) & 0b1;
+            uint32_t size  = 2+sf;
+            imm12 = imm12 << size;
+            return a64::str_imm12(sf, imm12, Rn, Rt);
         } else if ((inst & 0xbfe00c00) == 0xb8200800) {
             //            size                 Rm  opt S      Rn    Rt
             // mask:  hex(0b10_111_1_11_11_1_00000_000_0_11_00000_00000)
