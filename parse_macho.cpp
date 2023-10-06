@@ -357,19 +357,16 @@ std::string decode_instruction(uint32_t inst) {
             } else {
                 return "MUL/MADD o0 == 1";
             }
-        } else if ((inst >> 21) == 0b10011010110) {
-            // C5.6.214 UDIV,  sf = 1 (64 bit)
+        } else if ((inst & 0x7fe0fc00) == 0x1ac00800) {
+            //             sf               Rm            Rn    Rd
+            // mask:  hex(0b0_11_11111111_00000_11111_1_00000_00000)
+            // value: hex(0b0_00_11010110_00000_00001_0_00000_00000)
+            // C5.6.214 UDIV
             uint32_t Rd    = (inst >>  0) & 0b11111;
             uint32_t Rn    = (inst >>  5) & 0b11111;
-            uint32_t o1    = (inst >> 10) & 0b1;
-            uint32_t X     = (inst >> 11) & 0b11111;
             uint32_t Rm    = (inst >> 16) & 0b11111;
             uint32_t sf    = (inst >> 31) & 0b1;
-            if (o1 == 0 && X == 1) {
-                return a64::udiv(sf, Rm, Rn, Rd);
-            } else {
-                return "UDIV Data processing - SIMD and floating point";
-            }
+            return a64::udiv(sf, Rm, Rn, Rd);
         }
         return "Data processing - register: " + std::to_string(inst);
     } else if (((inst >> 25) & 0b0111) == 0b0111) {
