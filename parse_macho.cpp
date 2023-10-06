@@ -47,9 +47,11 @@
  * by 0, and non-variable parts by 1. For every 0 in the mask there is 0 in
  * the value; for every 1 in the mask, the value must specify 0 or 1, based on
  * the ARM manual specification for the instruction. The mask and value uniquely
- * determines the instruction. The variables are then extracted using a shift
- * and an "and" for a given width. After that we know both the instruction type
- * and all variables and we pass them to a function, such as a64::udiv().
+ * determine the instruction. They can be evaluated in Python and converted to a
+ * hexadecimal number that is then used in the if condition. The variables are
+ * then extracted using a shift and an "and" for a given width. After that we
+ * know both the instruction type and all variables and we pass them to a
+ * function, such as a64::udiv().
  */
 
 
