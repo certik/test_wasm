@@ -182,6 +182,30 @@ namespace a64 {
         return s;
     }
 
+    std::string decode_shift(uint32_t shift) {
+        if (shift == 0b00) {
+            return "lsl";
+        } else if (shift == 0b01) {
+            return "lsr";
+        } else if (shift == 0b10) {
+            return "asr";
+        } else {
+            return "reserved";
+        }
+    }
+
+    std::string add2(uint32_t sf, uint32_t shift, uint32_t Rm, uint32_t imm6,
+            uint32_t Rn, uint32_t Rd) {
+        std::string s = "add "
+            + reg(sf, Rd, 1) + ", "
+            + reg(sf, Rn, 1) + ", "
+            + reg(sf, Rm, 1);
+        if (imm6 != 0) {
+            s += ", " + decode_shift(shift) + " #" + std::to_string(imm6);
+        }
+        return s;
+    }
+
 }
 
 
@@ -260,7 +284,17 @@ std::string decode_instruction(uint32_t inst) {
         // C3.3 Loads and stores
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
-        return "Data processing - register";
+        if ((inst >> 24) == 0b10001011) {
+            // C5.6.5 ADD (shifted register)
+            uint32_t Rd    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t imm6  = (inst >> 10) & 0b111111;
+            uint32_t Rm    = (inst >> 16) & 0b11111;
+            uint32_t shift = (inst >> 22) & 0b11;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            return a64::add2(sf, shift, Rm, imm6, Rn, Rd);
+        }
+        return "Data processing - register: " + std::to_string(inst);
     } else if (((inst >> 25) & 0b0111) == 0b0111) {
         return "Data processing - SIMD and floating point";
     } else {
@@ -334,11 +368,11 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     for (size_t i=0; i < n; i+=4) {
         std::cout << "            " << std::hex
             << addr + i*4 << " "
-            << data[i] << " "
-            << data[i+1] << " "
-            << data[i+2] << " "
-            << data[i+3]
-            << std::dec << std::endl;
+            << data[i];
+        if (i+1 < n) std::cout <<  " " << data[i+1];
+        if (i+2 < n) std::cout <<  " " << data[i+2];
+        if (i+3 < n) std::cout <<  " " << data[i+3];
+        std::cout << std::dec << std::endl;
     }
     std::cout << "        Instructions in asm, equivalent to `otool -tv test.x`: " << std::endl;
     for (size_t i=0; i < n; i++) {
