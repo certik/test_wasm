@@ -29,6 +29,27 @@
  *
  * https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/ARM-Instruction-Set-Encoding/ARM-instruction-set-encoding
  *
+ * The instruction decoding is typically done using the following template:
+ *
+ *       } else if ((inst & 0x7fe0fc00) == 0x1ac00800) {
+ *           //             sf               Rm            Rn    Rd
+ *           // mask:  hex(0b0_11_11111111_00000_11111_1_00000_00000)
+ *           // value: hex(0b0_00_11010110_00000_00001_0_00000_00000)
+ *           // C5.6.214 UDIV
+ *           uint32_t Rd    = (inst >>  0) & 0b11111;
+ *           uint32_t Rn    = (inst >>  5) & 0b11111;
+ *           uint32_t Rm    = (inst >> 16) & 0b11111;
+ *           uint32_t sf    = (inst >> 31) & 0b1;
+ *           return a64::udiv(sf, Rm, Rn, Rd);
+ *       }
+ *
+ * In the mask the various variable parts (above: sf, Rm, Rn, Rd) are masked
+ * by 0, and non-variable parts by 1. For every 0 in the mask there is 0 in
+ * the value; for every 1 in the mask, the value must specify 0 or 1, based on
+ * the ARM manual specification for the instruction. The mask and value uniquely
+ * determines the instruction. The variables are then extracted using a shift
+ * and an "and" for a given width. After that we know both the instruction type
+ * and all variables and we pass them to a function, such as a64::udiv().
  */
 
 
