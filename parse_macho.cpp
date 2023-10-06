@@ -339,23 +339,21 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t shift = (inst >> 22) & 0b11;
             uint32_t sf    = (inst >> 31) & 0b1;
             return a64::sub2(sf, shift, Rm, imm6, Rn, Rd);
-        } else if ((inst >> 21) == 0b10011011000) {
-            // C5.6.119 MADD, sf = 1 (64 bit)
-            // C5.6.133 MUL,  sf = 1 (64 bit)
+        } else if ((inst & 0x7fe08000) == 0x1b000000) {
+            //             sf                Rm      Ra    Rn    Rd
+            // mask:  hex(0b0_11_11111_111_00000_1_00000_00000_00000)
+            // value: hex(0b0_00_11011_000_00000_0_00000_00000_00000)
+            // C5.6.119 MADD
+            // C5.6.133 MUL
             uint32_t Rd    = (inst >>  0) & 0b11111;
             uint32_t Rn    = (inst >>  5) & 0b11111;
             uint32_t Ra    = (inst >> 10) & 0b11111;
-            uint32_t o0    = (inst >> 15) & 0b1;
             uint32_t Rm    = (inst >> 16) & 0b11111;
             uint32_t sf    = (inst >> 31) & 0b1;
-            if (o0 == 0) {
-                if (Ra == 0b11111) {
-                    return a64::mul(sf, Rm, Rn, Rd);
-                } else {
-                    return a64::madd(sf, Rm, Ra, Rn, Rd);
-                }
+            if (Ra == 0b11111) {
+                return a64::mul(sf, Rm, Rn, Rd);
             } else {
-                return "MUL/MADD o0 == 1";
+                return a64::madd(sf, Rm, Ra, Rn, Rd);
             }
         } else if ((inst & 0x7fe0fc00) == 0x1ac00800) {
             //             sf               Rm            Rn    Rd
