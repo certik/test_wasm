@@ -182,10 +182,17 @@ namespace a64 {
         return s;
     }
 
-    std::string add2(uint32_t shift, uint32_t Rm, uint32_t imm6, uint32_t Rn,
-            uint32_t Rd) {
-        std::string s = "add " + reg(sf, Rd, 1)
-            + ", #" + hex(imm6);
+    std::string add2(uint32_t sf, uint32_t shift, uint32_t Rm, uint32_t imm6,
+            uint32_t Rn, uint32_t Rd) {
+        std::string s = "add "
+            + reg(sf, Rd, 1) + ", "
+            + reg(sf, Rn, 1) + ", "
+            + reg(sf, Rm, 1);
+        if (shift != 0) {
+            // TODO: decode shift
+            s += ", " + std::to_string(shift) + " #" + hex(imm6);
+        }
+        return s;
     }
 
 }
@@ -267,7 +274,14 @@ std::string decode_instruction(uint32_t inst) {
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
         if ((inst >> 24) == 0b10001011) {
-            return a64::add(shift, Rm, imm6, Rn, Rd);
+            // C5.6.5 ADD (shifted register)
+            uint32_t Rd    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t imm6  = (inst >> 10) & 0x111111;
+            uint32_t Rm    = (inst >> 16) & 0b11111;
+            uint32_t shift = (inst >> 22) & 0b11;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            return a64::add2(sf, shift, Rm, imm6, Rn, Rd);
         }
         return "Data processing - register: " + std::to_string(inst);
     } else if (((inst >> 25) & 0b0111) == 0b0111) {
