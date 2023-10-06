@@ -99,7 +99,8 @@ std::string reg(uint32_t sf, uint32_t Rn, uint32_t zr) {
         } else {
             if (sf == 0) {
                 // 32 bit
-                return "wsp";
+                //return "wsp";
+                return "sp";
             } else {
                 // 64 bit
                 return "sp";
@@ -205,6 +206,11 @@ namespace a64 {
         return s;
     }
 
+    std::string ret() {
+        std::string s = "ret";
+        return s;
+    }
+
     std::string decode_shift(uint32_t shift) {
         if (shift == 0b00) {
             return "lsl";
@@ -261,6 +267,22 @@ namespace a64 {
     std::string udiv(uint32_t sf, uint32_t Rm, uint32_t Rn, uint32_t Rd) {
         std::string s = "udiv "
             + reg(sf, Rd, 1) + ", "
+            + reg(sf, Rn, 1) + ", "
+            + reg(sf, Rm, 1);
+        return s;
+    }
+
+    std::string str_imm12(uint32_t sf, uint32_t imm12, uint32_t Rn, uint32_t Rt) {
+        std::string s = "str "
+            + reg(sf, Rt, 1) + ", ["
+            + reg(sf, Rn, 0) + ", #"
+            + hex(imm12) + "]";
+        return s;
+    }
+
+    std::string str(uint32_t sf, uint32_t Rt, uint32_t Rn, uint32_t Rm) {
+        std::string s = "str "
+            + reg(sf, Rt, 1) + ", "
             + reg(sf, Rn, 1) + ", "
             + reg(sf, Rm, 1);
         return s;
@@ -337,11 +359,39 @@ std::string decode_instruction(uint32_t inst) {
             // svc
             uint32_t imm16 = (inst >>  5) & 0xffff;
             return a64::svc(imm16);
+        } else if (inst >> 12 == 0xd65f0) {
+            // C5.6.148 RET
+            return a64::ret();
         } else {
             return "Branch, exception generation and system instructions";
         }
     } else if (((inst >> 25) & 0b0101) == 0b0100) {
         // C3.3 Loads and stores
+        if ((inst & 0xbfc00000) == 0xb9000000) {
+            //            size                 imm12      Rn    Rt
+            // mask:  hex(0b10_111_1_11_11_000000000000_00000_00000)
+            // value: hex(0b10_111_0_01_00_000000000000_00000_00000)
+            // C5.6.178 STR (immediate, unsigned offset)
+            uint32_t Rt    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t imm12 = (inst >> 10) & 0b111111111111;
+            uint32_t sf  = (inst >> 30) & 0b1;
+            uint32_t size  = 2+sf;
+            imm12 = imm12 << size;
+            return a64::str_imm12(sf, imm12, Rn, Rt);
+        } else if ((inst & 0xbfe00c00) == 0xb8200800) {
+            //            size                 Rm  opt S      Rn    Rt
+            // mask:  hex(0b10_111_1_11_11_1_00000_000_0_11_00000_00000)
+            // value: hex(0b10_111_0_00_00_1_00000_000_0_10_00000_00000)
+            // C5.6.179 STR
+            uint32_t Rt    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            //uint32_t S     = (inst >> 12) & 0b1;
+            //uint32_t opt   = (inst >> 13) & 0b111;
+            uint32_t Rm    = (inst >> 16) & 0b11111;
+            uint32_t size  = (inst >> 30) & 0b1;
+            return a64::str(size, Rt, Rn, Rm);
+        }
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
         if ((inst >> 24) == 0b10001011) {
@@ -396,10 +446,6 @@ std::string decode_instruction(uint32_t inst) {
         return "??";
     }
     // TODO: move this up
-    if (inst >> 12 == 0xd65f0) {
-        // C5.6.148 RET
-        return "ret";
-    }
     if (inst >> 24 == 0b10101010) {
         // C5.6.125 MOV (register), sf = 1 (64 bit)
         uint32_t Rd = inst & 0b11111;
