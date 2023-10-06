@@ -10,6 +10,6 @@ _main:
         madd x0, x1, x0, xzr
         madd x0, x1, x0, x2
         udiv x0, x1, x0
-        ;mov x0, #42     ; exit code
+        mov x0, #42     ; exit code
         mov x16, #1     ; syscall number for exit
         svc #0x80       ; do the syscall!
