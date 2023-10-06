@@ -235,6 +235,14 @@ namespace a64 {
         return s;
     }
 
+    std::string udiv(uint32_t sf, uint32_t Rm, uint32_t Rn, uint32_t Rd) {
+        std::string s = "udiv "
+            + reg(sf, Rd, 1) + ", "
+            + reg(sf, Rn, 1) + ", "
+            + reg(sf, Rm, 1);
+        return s;
+    }
+
 }
 
 
@@ -348,6 +356,19 @@ std::string decode_instruction(uint32_t inst) {
                 }
             } else {
                 return "MUL/MADD o0 == 1";
+            }
+        } else if ((inst >> 21) == 0b10011010110) {
+            // C5.6.214 UDIV,  sf = 1 (64 bit)
+            uint32_t Rd    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t o1    = (inst >> 10) & 0b1;
+            uint32_t X     = (inst >> 11) & 0b11111;
+            uint32_t Rm    = (inst >> 16) & 0b11111;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            if (o1 == 0 && X == 1) {
+                return a64::udiv(sf, Rm, Rn, Rd);
+            } else {
+                return "UDIV Data processing - SIMD and floating point";
             }
         }
         return "Data processing - register: " + std::to_string(inst);
