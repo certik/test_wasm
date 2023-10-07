@@ -275,8 +275,11 @@ namespace a64 {
     std::string str_imm12(uint32_t sf, uint32_t imm12, uint32_t Rn, uint32_t Rt) {
         std::string s = "str "
             + reg(sf, Rt, 1) + ", ["
-            + reg(sf, Rn, 0) + ", #"
-            + hex(imm12) + "]";
+            + reg(sf, Rn, 0);
+        if (imm12 != 0) {
+            s = s + ", #" + hex(imm12);
+        }
+            s = s + "]";
         return s;
     }
 
