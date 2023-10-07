@@ -275,8 +275,11 @@ namespace a64 {
     std::string str_imm12(uint32_t sf, uint32_t imm12, uint32_t Rn, uint32_t Rt) {
         std::string s = "str "
             + reg(sf, Rt, 1) + ", ["
-            + reg(sf, Rn, 0) + ", #"
-            + hex(imm12) + "]";
+            + reg(sf, Rn, 0);
+        if (imm12 != 0) {
+            s = s + ", #" + hex(imm12);
+        }
+            s = s + "]";
         return s;
     }
 
@@ -285,6 +288,17 @@ namespace a64 {
             + reg(sf, Rt, 1) + ", "
             + reg(sf, Rn, 1) + ", "
             + reg(sf, Rm, 1);
+        return s;
+    }
+
+    std::string stp(uint32_t sf, uint32_t imm7, uint32_t Rt2, uint32_t Rn, uint32_t Rt) {
+        std::string s = "stp "
+            + reg(sf, Rt, 1) + ", " + reg(sf, Rt2, 1)
+            + ", [" + reg(sf, Rn, 0);
+        if (imm7 != 0) {
+            s = s + ", #" + hex(imm7);
+        }
+            s = s + "]";
         return s;
     }
 
@@ -391,6 +405,18 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t Rm    = (inst >> 16) & 0b11111;
             uint32_t size  = (inst >> 30) & 0b1;
             return a64::str(size, Rt, Rn, Rm);
+        } else if ((inst & 0x7fc00000) == 0x29000000) {
+            //             sf                imm7   Rt2    Rn    Rt
+            // mask:  hex(0b01_111_1_111_1_0000000_00000_00000_00000)
+            // value: hex(0b00_101_0_010_0_0000000_00000_00000_00000)
+            // C5.6.177 STP
+            uint32_t Rt    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t Rt2   = (inst >> 10) & 0b11111;
+            uint32_t imm7  = (inst >> 15) & 0b1111111;
+            uint32_t sf    = (inst >> 31) & 0b1;
+            imm7 = imm7 << 3;
+            return a64::stp(sf, imm7, Rt2, Rn, Rt);
         }
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
