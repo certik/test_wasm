@@ -302,7 +302,7 @@ namespace a64 {
     std::string stur(uint32_t sf, int32_t imm9, uint32_t Rn, uint32_t Rt) {
         std::string s = "stur "
             + reg(sf, Rt, 1) + ", ["
-            + reg(sf, Rn, 0);
+            + reg(1, Rn, 0);
         if (imm9 != 0) {
             s = s + ", #" + shex(imm9);
         }
