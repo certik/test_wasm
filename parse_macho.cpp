@@ -291,6 +291,17 @@ namespace a64 {
         return s;
     }
 
+    std::string ldr_pimm(uint32_t sf, uint32_t pimm, uint32_t Rn, uint32_t Rt) {
+        std::string s = "ldr "
+            + reg(sf, Rt, 1) + ", ["
+            + reg(1, Rn, 0);
+        if (pimm != 0) {
+            s = s + ", #" + hex(pimm);
+        }
+            s = s + "]";
+        return s;
+    }
+
     std::string str(uint32_t sf, uint32_t Rt, uint32_t Rn, uint32_t Rm) {
         std::string s = "str "
             + reg(sf, Rt, 1) + ", "
@@ -455,6 +466,18 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t sf    = (inst >> 31) & 0b1;
             imm7 = imm7 << 3;
             return a64::stp(sf, imm7, Rt2, Rn, Rt);
+        } else if ((inst & 0xbfc00000) == 0xb9400000) {
+            //              sf                 imm12      Rn    Rt
+            // mask:  hex(0b10_111_1_11_11_000000000000_00000_00000)
+            // value: hex(0b10_111_0_01_01_000000000000_00000_00000)
+            // C5.6.83 LDR (immediate, unsigned offset)
+            uint32_t Rt    = (inst >>  0) & 0b11111;
+            uint32_t Rn    = (inst >>  5) & 0b11111;
+            uint32_t imm12 = (inst >> 10) & 0b111111111111;
+            uint32_t sf  = (inst >> 30) & 0b1;
+            uint32_t size  = 2+sf;
+            imm12 = imm12 << size;
+            return a64::ldr_pimm(sf, imm12, Rn, Rt);
         }
         return "Loads and stores";
     } else if (((inst >> 25) & 0b0111) == 0b0101) {
