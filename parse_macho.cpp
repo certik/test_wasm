@@ -123,6 +123,14 @@ std::string hex(uint32_t n) {
     return out.str();
 }
 
+std::string shex(int32_t n) {
+    if (n > 0) {
+        return hex(n);
+    } else {
+        return "-" + hex(-n);
+    }
+}
+
 namespace a64 {
     std::string add(uint32_t sf, uint32_t shift, uint32_t imm12, uint32_t Rn,
             uint32_t Rd) {
@@ -291,12 +299,12 @@ namespace a64 {
         return s;
     }
 
-    std::string stur(uint32_t sf, uint32_t imm9, uint32_t Rn, uint32_t Rt) {
+    std::string stur(uint32_t sf, int32_t imm9, uint32_t Rn, uint32_t Rt) {
         std::string s = "stur "
             + reg(sf, Rt, 1) + ", ["
             + reg(sf, Rn, 0);
         if (imm9 != 0) {
-            s = s + ", #" + hex(imm9);
+            s = s + ", #" + shex(imm9);
         }
             s = s + "]";
         return s;
@@ -424,8 +432,17 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t Rt    = (inst >>  0) & 0b11111;
             uint32_t Rn    = (inst >>  5) & 0b11111;
             uint32_t imm9  = (inst >> 12) & 0b111111111;
+            int32_t simm9;
             uint32_t sf    = (inst >> 30) & 0b1;
-            return a64::stur(sf, imm9, Rn, Rt);
+            if ((imm9 & 0b100000000) == 0b100000000) {
+                // negative
+                imm9 = imm9 & 0b011111111;
+                simm9 = 256 - imm9;
+                simm9 = -simm9;
+            } else {
+                simm9 = imm9;
+            }
+            return a64::stur(sf, simm9, Rn, Rt);
         } else if ((inst & 0x7fc00000) == 0x29000000) {
             //             sf                imm7   Rt2    Rn    Rt
             // mask:  hex(0b01_111_1_111_1_0000000_00000_00000_00000)
