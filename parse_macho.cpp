@@ -471,17 +471,8 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t Rt    = (inst >>  0) & 0b11111;
             uint32_t Rn    = (inst >>  5) & 0b11111;
             uint32_t imm9  = (inst >> 12) & 0b111111111;
-            int32_t simm9;
+            int32_t  simm9 = SignExtend32(imm9, 9);
             uint32_t sf    = (inst >> 30) & 0b1;
-            //simm9 = sign_extend_32(imm9, 9)
-            if ((imm9 & 0b100000000) == 0b100000000) {
-                // negative
-                imm9 = imm9 & 0b011111111;
-                simm9 = 256 - imm9;
-                simm9 = -simm9;
-            } else {
-                simm9 = imm9;
-            }
             return a64::stur(sf, simm9, Rn, Rt);
         } else if ((inst & 0x7fc00000) == 0x29000000) {
             //             sf                imm7   Rt2    Rn    Rt
