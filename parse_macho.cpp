@@ -126,7 +126,7 @@ std::string hex(uint32_t n) {
 }
 
 std::string shex(int32_t n) {
-    if (n > 0) {
+    if (n >= 0) {
         return hex(n);
     } else {
         return "-" + hex(-n);
