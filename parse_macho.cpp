@@ -430,11 +430,8 @@ std::string decode_instruction(uint32_t inst) {
             // mask:  hex(0b1_11111_00000000000000000000000000)
             // value: hex(0b1_00101_00000000000000000000000000)
             // C5.6.26 BL
-            //const uint32_t mask1 = 1 << (26-1);
-            const uint32_t mask2 = (1<<26)-1;
-            uint32_t imm26 = inst & mask2;
-            int32_t offset;
-            offset = SignExtend32(imm26, 26);
+            uint32_t imm26 = inst & ((1<<26)-1);
+            int32_t offset = SignExtend32(imm26, 26);
             int32_t label = offset*4;
             return a64::bl(label);
         } else {
