@@ -434,9 +434,7 @@ std::string decode_instruction(uint32_t inst) {
             int32_t offset;
             if ((imm26 & mask1) == mask1) {
                 // negative
-                //imm26 = imm26 & (~mask); // Remove the "-" sign
-                imm26 = ((~imm26) & mask2) + 1;
-                offset = -imm26;
+                offset = -(((~imm26) & mask2) + 1);
             } else {
                 // positive
                 offset = imm26;
