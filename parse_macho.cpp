@@ -432,13 +432,7 @@ std::string decode_instruction(uint32_t inst) {
             const uint32_t mask2 = (1<<26)-1;
             uint32_t imm26 = inst & mask2;
             int32_t offset;
-            if ((imm26 & mask1) == mask1) {
-                // negative
-                offset = -(((~imm26) & mask2) + 1);
-            } else {
-                // positive
-                offset = imm26;
-            }
+            offset = (((imm26 & mask1) == mask1) ? (-(((~imm26) & mask2) + 1)) : imm26);
             int32_t label = offset*4;
             return a64::bl(label);
         } else {
