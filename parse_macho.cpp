@@ -428,8 +428,8 @@ std::string decode_instruction(uint32_t inst) {
             // mask:  hex(0b1_11111_00000000000000000000000000)
             // value: hex(0b1_00101_00000000000000000000000000)
             // C5.6.26 BL
-            const uint32_t mask1 = 0x2000000; // 0b1 << (26-1)
-            const uint32_t mask2 = 0x3ffffff; // 0b1111...111 (26 of those)
+            const uint32_t mask1 = 1 << (26-1);
+            const uint32_t mask2 = (1<<26)-1;
             uint32_t imm26 = inst & mask2;
             int32_t offset;
             if ((imm26 & mask1) == mask1) {
