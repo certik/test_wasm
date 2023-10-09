@@ -66,6 +66,8 @@
         }                                                                      \
     }
 
+#define SignExtend32(x, n) (((((uint32_t)(x)) & (1 << ((n)-1))) == (1 << ((n)-1))) ? (-(((~((uint32_t)(x))) & ((1<<(n))-1)) + 1)) : (uint32_t)(x))
+
 void print_bytes(uint8_t *data, size_t size) {
     std::cout << "DATA (" << size << "):";
     for (size_t i=0; i < size; i++) {
@@ -124,7 +126,7 @@ std::string hex(uint32_t n) {
 }
 
 std::string shex(int32_t n) {
-    if (n > 0) {
+    if (n >= 0) {
         return hex(n);
     } else {
         return "-" + hex(-n);
@@ -321,6 +323,12 @@ namespace a64 {
         return s;
     }
 
+    std::string adrp(int32_t imm, uint32_t Rd) {
+        std::string s = "adrp " + reg(1, Rd, 1) + ", " + shex(imm)
+            + " ; relative offset";
+        return s;
+    }
+
     std::string stp(uint32_t sf, uint32_t imm7, uint32_t Rt2, uint32_t Rn, uint32_t Rt) {
         std::string s = "stp "
             + reg(sf, Rt, 1) + ", " + reg(sf, Rt2, 1)
@@ -343,6 +351,12 @@ namespace a64 {
         return s;
     }
 
+    // Relative offset in bytes
+    std::string bl(int32_t offset) {
+        std::string s = "bl " + shex(offset) + " ; relative offset";
+        return s;
+    }
+
 }
 
 
@@ -359,6 +373,18 @@ std::string decode_instruction(uint32_t inst) {
         // C3.4 Data processing - immediate
         if        (((inst >> 23) & 0b110) == 0b000) {
             // C3.4.6 PC-rel. addressing
+            if ((inst & 0x9f000000) == 0x90000000) {
+                //             immlo               immhi         Rd
+                // mask:  hex(0b1_00_11111_0000000000000000000_00000)
+                // value: hex(0b1_00_10000_0000000000000000000_00000)
+                // C5.6.10 ADRP
+                uint32_t Rd    = (inst >>  0) & 0b11111;
+                uint32_t immhi = (inst >>  5) & ((1<<19)-1);
+                uint32_t immlo = (inst >> 29) & 0b11;
+                uint32_t imm = immhi << 2 | immlo;
+                int32_t  simm = SignExtend32(imm, 21);
+                return a64::adrp(simm, Rd);
+            }
             return "C3.4.6 PC-rel. addressing";
         } else if (((inst >> 23) & 0b110) == 0b010) {
             // C3.4.1 Add/subtract (immediate)
@@ -417,6 +443,15 @@ std::string decode_instruction(uint32_t inst) {
         } else if (inst >> 12 == 0xd65f0) {
             // C5.6.148 RET
             return a64::ret();
+        } else if ((inst & 0xfc000000) == 0x94000000) {
+            //                                 imm26
+            // mask:  hex(0b1_11111_00000000000000000000000000)
+            // value: hex(0b1_00101_00000000000000000000000000)
+            // C5.6.26 BL
+            uint32_t imm26 = inst & ((1<<26)-1);
+            int32_t offset = SignExtend32(imm26, 26);
+            int32_t label = offset*4;
+            return a64::bl(label);
         } else {
             return "Branch, exception generation and system instructions";
         }
@@ -454,16 +489,8 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t Rt    = (inst >>  0) & 0b11111;
             uint32_t Rn    = (inst >>  5) & 0b11111;
             uint32_t imm9  = (inst >> 12) & 0b111111111;
-            int32_t simm9;
+            int32_t  simm9 = SignExtend32(imm9, 9);
             uint32_t sf    = (inst >> 30) & 0b1;
-            if ((imm9 & 0b100000000) == 0b100000000) {
-                // negative
-                imm9 = imm9 & 0b011111111;
-                simm9 = 256 - imm9;
-                simm9 = -simm9;
-            } else {
-                simm9 = imm9;
-            }
             return a64::stur(sf, simm9, Rn, Rt);
         } else if ((inst & 0x7fc00000) == 0x29000000) {
             //             sf                imm7   Rt2    Rn    Rt
