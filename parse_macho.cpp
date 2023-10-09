@@ -323,6 +323,12 @@ namespace a64 {
         return s;
     }
 
+    std::string adrp(int32_t imm, uint32_t Rd) {
+        std::string s = "adrp " + reg(1, Rd, 1) + ", " + shex(imm)
+            + " ; relative offset";
+        return s;
+    }
+
     std::string stp(uint32_t sf, uint32_t imm7, uint32_t Rt2, uint32_t Rn, uint32_t Rt) {
         std::string s = "stp "
             + reg(sf, Rt, 1) + ", " + reg(sf, Rt2, 1)
@@ -367,6 +373,18 @@ std::string decode_instruction(uint32_t inst) {
         // C3.4 Data processing - immediate
         if        (((inst >> 23) & 0b110) == 0b000) {
             // C3.4.6 PC-rel. addressing
+            if ((inst & 0x9f000000) == 0x90000000) {
+                //             immlo               immhi         Rd
+                // mask:  hex(0b1_00_11111_0000000000000000000_00000)
+                // value: hex(0b1_00_10000_0000000000000000000_00000)
+                // C5.6.10 ADRP
+                uint32_t Rd    = (inst >>  0) & 0b11111;
+                uint32_t immhi = (inst >>  5) & ((1<<19)-1);
+                uint32_t immlo = (inst >> 29) & 0b11;
+                uint32_t imm = immhi << 2 | immlo;
+                int32_t  simm = SignExtend32(imm, 21);
+                return a64::adrp(simm, Rd);
+            }
             return "C3.4.6 PC-rel. addressing";
         } else if (((inst >> 23) & 0b110) == 0b010) {
             // C3.4.1 Add/subtract (immediate)
