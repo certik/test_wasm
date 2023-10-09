@@ -343,6 +343,12 @@ namespace a64 {
         return s;
     }
 
+    // Relative offset in bytes
+    std::string bl(int32_t offset) {
+        std::string s = "bl " + shex(offset) + " ; relative offset";
+        return s;
+    }
+
 }
 
 
@@ -417,6 +423,26 @@ std::string decode_instruction(uint32_t inst) {
         } else if (inst >> 12 == 0xd65f0) {
             // C5.6.148 RET
             return a64::ret();
+        } else if ((inst & 0xfc000000) == 0x94000000) {
+            //                                 imm26
+            // mask:  hex(0b1_11111_00000000000000000000000000)
+            // value: hex(0b1_00101_00000000000000000000000000)
+            // C5.6.26 BL
+            const uint32_t mask1 = 0x2000000; // 0b1 << (26-1)
+            const uint32_t mask2 = 0x3ffffff; // 0b1111...111 (26 of those)
+            uint32_t imm26 = inst & mask2;
+            int32_t offset;
+            if ((imm26 & mask1) == mask1) {
+                // negative
+                //imm26 = imm26 & (~mask); // Remove the "-" sign
+                imm26 = ((~(int32_t)imm26) & mask2) + 1;
+                offset = -(int32_t)imm26;
+            } else {
+                // positive
+                offset = imm26;
+            }
+            int32_t label = offset*4;
+            return a64::bl(label);
         } else {
             return "Branch, exception generation and system instructions";
         }
@@ -456,6 +482,7 @@ std::string decode_instruction(uint32_t inst) {
             uint32_t imm9  = (inst >> 12) & 0b111111111;
             int32_t simm9;
             uint32_t sf    = (inst >> 30) & 0b1;
+            //simm9 = sign_extend_32(imm9, 9)
             if ((imm9 & 0b100000000) == 0b100000000) {
                 // negative
                 imm9 = imm9 & 0b011111111;
