@@ -13,6 +13,10 @@
  *
  * https://h3adsh0tzz.com/2020/01/macho-file-format/
  *
+ * Good resource with an example parser:
+ *
+ * https://github.com/qyang-nj/llios/
+ *
  * This file provides a straightforward self-contained reader (no
  * dependencies).
  *
