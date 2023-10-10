@@ -124,6 +124,24 @@ struct dylib_command {
     struct dylib dylib;
 };
 
+struct dyld_chained_fixups {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t offset;
+    uint32_t len;
+};
+
+struct dyld_chained_fixups_header
+{
+    uint32_t    fixups_version;
+    uint32_t    starts_offset;
+    uint32_t    imports_offset;
+    uint32_t    symbols_offset;
+    uint32_t    imports_count;
+    uint32_t    imports_format;
+    uint32_t    symbols_format;
+};
+
 // Reads a file `filename` to `data`
 // Returns `true` for succeess, `false` for fail
 bool read_file(const std::string &filename, std::vector<uint8_t> &data)

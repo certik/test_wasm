@@ -760,9 +760,17 @@ int main() {
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
             std::cout << "LC_DYLD_EXPORTS_TRIE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            dyld_chained_fixups *p = (dyld_chained_fixups*)(&data[idx]);
+            //print_bytes(&data[idx], pcmd->cmdsize);
+            std::cout << "    offset: " << p->offset <<std::endl;
+            std::cout << "    len: " << p->len <<std::endl;
         } else if (pcmd->cmd == LC_DYLD_CHAINED_FIXUPS) {
             std::cout << "LC_DYLD_CHAINED_FIXUPS" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            dyld_chained_fixups *p = (dyld_chained_fixups*)(&data[idx]);
+            //print_bytes(&data[idx], pcmd->cmdsize);
+            std::cout << "    offset: " << p->offset <<std::endl;
+            std::cout << "    len: " << p->len <<std::endl;
         } else {
             std::cout << "UNKNOWN" << std::endl;
             std::cout << "    type: " << pcmd->cmd << std::endl;
