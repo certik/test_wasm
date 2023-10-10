@@ -745,6 +745,8 @@ int main() {
         } else if (pcmd->cmd == LC_LOAD_DYLINKER) {
             std::cout << "LC_LOAD_DYLINKER" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(dylinker_command) << std::endl;
+            // TODO: we ended here
         } else if (pcmd->cmd == LC_CODE_SIGNATURE) {
             std::cout << "LC_CODE_SIGNATURE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;

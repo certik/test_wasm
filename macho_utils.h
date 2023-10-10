@@ -142,6 +142,14 @@ struct dyld_chained_fixups_header
     uint32_t    symbols_format;
 };
 
+struct dylinker_command {
+   uint32_t cmd;
+   uint32_t cmdsize;
+   union lc_str name;
+};
+
+// ---------------------------------------------------------------------
+
 // Reads a file `filename` to `data`
 // Returns `true` for succeess, `false` for fail
 bool read_file(const std::string &filename, std::vector<uint8_t> &data)
