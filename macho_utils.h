@@ -124,7 +124,7 @@ struct dylib_command {
     struct dylib dylib;
 };
 
-struct dyld_chained_fixups {
+struct section_offset_len {
     uint32_t cmd;
     uint32_t cmdsize;
     uint32_t offset;
