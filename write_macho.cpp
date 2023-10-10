@@ -23,73 +23,87 @@ int main() {
     std::vector<uint8_t> data;
 
     // Header
-    mach_header_64 header;
-    header.magic = MH_MAGIC_64;
-    header.cputype = CPU_TYPE_ARM64;
-    header.cpusubtype = 0;
-    header.filetype = 2;
-    header.ncmds = 17;
-    header.sizeofcmds = 1056;
-    header.flags = 2097285;
-    header.reserved = 0;
+    mach_header_64 header = {
+        .magic = MH_MAGIC_64,
+        .cputype = CPU_TYPE_ARM64,
+        .cpusubtype = 0,
+        .filetype = 2,
+        .ncmds = 17,
+        .sizeofcmds = 1056,
+        .flags = 2097285,
+        .reserved = 0,
+    };
     vec_append(data, (uint8_t*)&header, sizeof(header));
 
     // LC_SEGMENT_64
-    segment_command_64 segment;
-    segment.cmd = LC_SEGMENT_64;
-    segment.cmdsize = 72;
-    set_string(segment.segname, "__PAGEZERO");
-    segment.vmaddr = 0;
-    segment.vmsize = 0x100000000;
-    segment.fileoff = 0;
-    segment.filesize = 0;
-    segment.maxprot = 0;
-    segment.initprot = 0;
-    segment.nsects = 0;
-    segment.flags = 0;
+    segment_command_64 segment = {
+        .cmd = LC_SEGMENT_64,
+        .cmdsize = 72,
+        .segname = "__PAGEZERO",
+        .vmaddr = 0,
+        .vmsize = 0x100000000,
+        .fileoff = 0,
+        .filesize = 0,
+        .maxprot = 0,
+        .initprot = 0,
+        .nsects = 0,
+        .flags = 0,
+    };
     vec_append(data, (uint8_t*)&segment, sizeof(segment));
 
-    // LC_SEGMENT_64
-    segment.cmd = LC_SEGMENT_64;
-    segment.cmdsize = 392;
-    set_string(segment.segname, "__TEXT");
-    segment.vmaddr = 0x100000000;
-    segment.vmsize = 0x4000;
-    segment.fileoff = 0;
-    segment.filesize = 16384;
-    segment.maxprot = 5;
-    segment.initprot = 5;
-    segment.nsects = 4;
-    segment.flags = 0;
-    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    {
+        // LC_SEGMENT_64
+        segment_command_64 segment = {
+            .cmd = LC_SEGMENT_64,
+            .cmdsize = 392,
+            .segname = "__TEXT",
+            .vmaddr = 0x100000000,
+            .vmsize = 0x4000,
+            .fileoff = 0,
+            .filesize = 16384,
+            .maxprot = 5,
+            .initprot = 5,
+            .nsects = 4,
+            .flags = 0,
+        };
+        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    }
 
-    // LC_SEGMENT_64
-    segment.cmd = LC_SEGMENT_64;
-    segment.cmdsize = 152;
-    set_string(segment.segname, "__DATA_CONST");
-    segment.vmaddr = 0x100004000;
-    segment.vmsize = 0x4000;
-    segment.fileoff = 16384;
-    segment.filesize = 16384;
-    segment.maxprot = 3;
-    segment.initprot = 3;
-    segment.nsects = 1;
-    segment.flags = 16;
-    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    {
+        // LC_SEGMENT_64
+        segment_command_64 segment = {
+            .cmd = LC_SEGMENT_64,
+            .cmdsize = 152,
+            .segname = "__DATA_CONST",
+            .vmaddr = 0x100004000,
+            .vmsize = 0x4000,
+            .fileoff = 16384,
+            .filesize = 16384,
+            .maxprot = 3,
+            .initprot = 3,
+            .nsects = 1,
+            .flags = 16,
+        };
+        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    }
 
-    // LC_SEGMENT_64
-    segment.cmd = LC_SEGMENT_64;
-    segment.cmdsize = 72;
-    set_string(segment.segname, "__LINKEDIT");
-    segment.vmaddr = 0x100008000;
-    segment.vmsize = 0x4000;
-    segment.fileoff = 32768;
-    segment.filesize = 658;
-    segment.maxprot = 1;
-    segment.initprot = 1;
-    segment.nsects = 0;
-    segment.flags = 0;
-    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    {
+        // LC_SEGMENT_64
+        segment_command_64 segment = {
+            .cmd = LC_SEGMENT_64,
+            .cmdsize = 72,
+            .segname = "__LINKEDIT",
+            .vmaddr = 0x100008000,
+            .vmsize = 0x4000,
+            .fileoff = 32768,
+            .filesize = 658,
+            .maxprot = 1,
+            .initprot = 1,
+            .nsects = 0,
+            .flags = 0,
+        };
+        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    }
 
     write_file("test2.x", data);
 
