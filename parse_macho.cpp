@@ -669,12 +669,14 @@ int main() {
         if (pcmd->cmd == LC_UUID) {
             std::cout << "LC_UUID" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(uuid_command) << std::endl;
             uuid_command *p = (uuid_command*)(&data[idx]);
             std::cout << "    UUID: " << uuid_to_str(p->uuid) << std::endl;
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             segment_command_64 *p = (segment_command_64*)(&data[idx]);
+            std::cout << "    expect : " << sizeof(segment_command_64) + p->nsects*sizeof(section_64) << std::endl;
             std::cout << "    segname: " << p->segname << std::endl;
             std::cout << "    vmaddr: 0x" << std::hex << p->vmaddr << std::dec << std::endl;
             std::cout << "    vmsize: 0x" << std::hex << p->vmsize << std::dec << std::endl;
@@ -717,6 +719,7 @@ int main() {
         } else if (pcmd->cmd == LC_SYMTAB) {
             std::cout << "LC_SYMTAB" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(symtab_command) << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);
             std::cout << "    Number of symbols: " << p->nsyms <<std::endl;
             std::cout << "    symoff: " << p->symoff <<std::endl;
@@ -727,11 +730,14 @@ int main() {
         } else if (pcmd->cmd == LC_DYSYMTAB) {
             std::cout << "LC_DYSYMTAB" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(dysymtab_command) << std::endl;
             dysymtab_command *p = (dysymtab_command*)(&data[idx]);
             std::cout << "    Number of local symbols: " << p->nlocalsym <<std::endl;
         } else if (pcmd->cmd == LC_LOAD_DYLIB) {
             std::cout << "LC_LOAD_DYLIB" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            // TODO: cmdsize = 56, expect = 24; We have 32 unaccounted bytes
+            std::cout << "    expect : " << sizeof(dylib_command) << std::endl;
             dylib_command *p = (dylib_command*)(&data[idx]);
             size_t str_idx = idx+p->dylib.name.offset;
             std::string str = (char *)(&data[str_idx]);
@@ -760,6 +766,7 @@ int main() {
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
             std::cout << "LC_DYLD_EXPORTS_TRIE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
             //print_bytes(&data[idx], pcmd->cmdsize);
             std::cout << "    offset: " << p->offset <<std::endl;
@@ -767,6 +774,7 @@ int main() {
         } else if (pcmd->cmd == LC_DYLD_CHAINED_FIXUPS) {
             std::cout << "LC_DYLD_CHAINED_FIXUPS" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
             //print_bytes(&data[idx], pcmd->cmdsize);
             std::cout << "    offset: " << p->offset <<std::endl;
