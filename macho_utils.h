@@ -41,8 +41,7 @@ struct load_command {
    uint32_t cmdsize;
 };
 
-struct uuid_command
-   {
+struct uuid_command {
    uint32_t cmd;
    uint32_t cmdsize;
    uint8_t uuid[16];
