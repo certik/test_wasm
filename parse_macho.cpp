@@ -13,6 +13,10 @@
  *
  * https://h3adsh0tzz.com/2020/01/macho-file-format/
  *
+ * Good resource with an example parser:
+ *
+ * https://github.com/qyang-nj/llios/
+ *
  * This file provides a straightforward self-contained reader (no
  * dependencies).
  *
@@ -668,12 +672,15 @@ int main() {
         load_command *pcmd = (load_command*)(&data[idx]);
         if (pcmd->cmd == LC_UUID) {
             std::cout << "LC_UUID" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(uuid_command) << std::endl;
             uuid_command *p = (uuid_command*)(&data[idx]);
             std::cout << "    UUID: " << uuid_to_str(p->uuid) << std::endl;
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             segment_command_64 *p = (segment_command_64*)(&data[idx]);
-            std::cout << "    cmdsize: " << p->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(segment_command_64) + p->nsects*sizeof(section_64) << std::endl;
             std::cout << "    segname: " << p->segname << std::endl;
             std::cout << "    vmaddr: 0x" << std::hex << p->vmaddr << std::dec << std::endl;
             std::cout << "    vmsize: 0x" << std::hex << p->vmsize << std::dec << std::endl;
@@ -715,6 +722,8 @@ int main() {
             }
         } else if (pcmd->cmd == LC_SYMTAB) {
             std::cout << "LC_SYMTAB" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(symtab_command) << std::endl;
             symtab_command *p = (symtab_command*)(&data[idx]);
             std::cout << "    Number of symbols: " << p->nsyms <<std::endl;
             std::cout << "    symoff: " << p->symoff <<std::endl;
@@ -724,38 +733,67 @@ int main() {
                 << std::string((char*)&data[p->stroff], p->strsize) << std::endl;;
         } else if (pcmd->cmd == LC_DYSYMTAB) {
             std::cout << "LC_DYSYMTAB" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(dysymtab_command) << std::endl;
             dysymtab_command *p = (dysymtab_command*)(&data[idx]);
             std::cout << "    Number of local symbols: " << p->nlocalsym <<std::endl;
         } else if (pcmd->cmd == LC_LOAD_DYLIB) {
             std::cout << "LC_LOAD_DYLIB" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            // TODO: cmdsize = 56, expect = 24; We have 32 unaccounted bytes
+            std::cout << "    expect : " << sizeof(dylib_command) << std::endl;
             dylib_command *p = (dylib_command*)(&data[idx]);
             size_t str_idx = idx+p->dylib.name.offset;
             std::string str = (char *)(&data[str_idx]);
             std::cout << "    Dylib name: " << str <<std::endl;
         } else if (pcmd->cmd == LC_LOAD_DYLINKER) {
             std::cout << "LC_LOAD_DYLINKER" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(dylinker_command) << std::endl;
+            // TODO: we ended here
         } else if (pcmd->cmd == LC_CODE_SIGNATURE) {
             std::cout << "LC_CODE_SIGNATURE" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
             std::cout << "LC_FUNCTION_STARTS" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_DATA_IN_CODE) {
             std::cout << "LC_DATA_IN_CODE" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
             std::cout << "LC_SOURCE_VERSION" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_BUILD_VERSION) {
             std::cout << "LC_BUILD_VERSION" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_MAIN) {
             std::cout << "LC_MAIN" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
             std::cout << "LC_DYLD_EXPORTS_TRIE" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
+            section_offset_len *p = (section_offset_len*)(&data[idx]);
+            //print_bytes(&data[idx], pcmd->cmdsize);
+            std::cout << "    offset: " << p->offset <<std::endl;
+            std::cout << "    len: " << p->len <<std::endl;
         } else if (pcmd->cmd == LC_DYLD_CHAINED_FIXUPS) {
             std::cout << "LC_DYLD_CHAINED_FIXUPS" << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
+            section_offset_len *p = (section_offset_len*)(&data[idx]);
+            //print_bytes(&data[idx], pcmd->cmdsize);
+            std::cout << "    offset: " << p->offset <<std::endl;
+            std::cout << "    len: " << p->len <<std::endl;
         } else {
             std::cout << "UNKNOWN" << std::endl;
             std::cout << "    type: " << pcmd->cmd << std::endl;
+            std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         }
 
         idx += pcmd->cmdsize;
     }
     std::cout << "Done." << std::endl;
+    std::cout << "    idx      = " << idx << std::endl;
+    std::cout << "    filesize = " << data.size() << std::endl;
 }

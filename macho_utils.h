@@ -41,8 +41,7 @@ struct load_command {
    uint32_t cmdsize;
 };
 
-struct uuid_command
-   {
+struct uuid_command {
    uint32_t cmd;
    uint32_t cmdsize;
    uint8_t uuid[16];
@@ -124,6 +123,32 @@ struct dylib_command {
     uint32_t cmdsize;
     struct dylib dylib;
 };
+
+struct section_offset_len {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t offset;
+    uint32_t len;
+};
+
+struct dyld_chained_fixups_header
+{
+    uint32_t    fixups_version;
+    uint32_t    starts_offset;
+    uint32_t    imports_offset;
+    uint32_t    symbols_offset;
+    uint32_t    imports_count;
+    uint32_t    imports_format;
+    uint32_t    symbols_format;
+};
+
+struct dylinker_command {
+   uint32_t cmd;
+   uint32_t cmdsize;
+   union lc_str name;
+};
+
+// ---------------------------------------------------------------------
 
 // Reads a file `filename` to `data`
 // Returns `true` for succeess, `false` for fail
