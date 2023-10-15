@@ -765,10 +765,14 @@ int main() {
             std::cout << "    dataoff : " << std::to_string(p->dataoff) << std::endl;
             std::cout << "    datasize: " << std::to_string(p->datasize) << std::endl;
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
-            // TODO: we are working on this section now
             std::cout << "LC_FUNCTION_STARTS" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(linkedit_data_command) << std::endl;
+            linkedit_data_command *p = (linkedit_data_command*)(&data[idx]);
+            std::cout << "    dataoff : " << std::to_string(p->dataoff) << std::endl;
+            std::cout << "    datasize: " << std::to_string(p->datasize) << std::endl;
         } else if (pcmd->cmd == LC_DATA_IN_CODE) {
+            // TODO: we are working on this section now
             std::cout << "LC_DATA_IN_CODE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
