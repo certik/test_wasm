@@ -124,6 +124,7 @@ struct dylib_command {
     struct dylib dylib;
 };
 
+// Also sometimes called `linkedit_data_command`
 struct section_offset_len {
     uint32_t cmd;
     uint32_t cmdsize;
@@ -146,6 +147,28 @@ struct dylinker_command {
    uint32_t cmd;
    uint32_t cmdsize;
    union lc_str name;
+};
+
+struct source_version_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint64_t version;
+};
+
+struct build_version_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint32_t platform;
+  uint32_t minos;
+  uint32_t sdk;
+  uint32_t ntools;
+};
+
+struct entry_point_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint64_t entryoff;
+  uint64_t stacksize;
 };
 
 // ---------------------------------------------------------------------
