@@ -802,15 +802,17 @@ int main() {
             std::cout << "    sdk   : " << version_to_str(p->sdk) << std::endl;
             std::cout << "    ntools   : " << std::to_string(p->ntools) << std::endl;
         } else if (pcmd->cmd == LC_MAIN) {
-            // TODO: we are working on this section now
             std::cout << "LC_MAIN" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(entry_point_command) << std::endl;
+            entry_point_command *p = (entry_point_command*)(&data[idx]);
+            std::cout << "    entryoff : " << std::to_string(p->entryoff) << std::endl;
+            std::cout << "    stacksize: " << std::to_string(p->stacksize) << std::endl;
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
             std::cout << "LC_DYLD_EXPORTS_TRIE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
-            //print_bytes(&data[idx], pcmd->cmdsize);
             std::cout << "    offset: " << p->offset <<std::endl;
             std::cout << "    len: " << p->len <<std::endl;
         } else if (pcmd->cmd == LC_DYLD_CHAINED_FIXUPS) {

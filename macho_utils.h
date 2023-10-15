@@ -171,6 +171,13 @@ struct build_version_command {
   uint32_t ntools;
 };
 
+struct entry_point_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint64_t entryoff;
+  uint64_t stacksize;
+};
+
 // ---------------------------------------------------------------------
 
 // Reads a file `filename` to `data`
