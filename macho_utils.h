@@ -131,6 +131,14 @@ struct section_offset_len {
     uint32_t len;
 };
 
+// Same as `section_offset_len`
+struct linkedit_data_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint32_t dataoff;
+  uint32_t datasize;
+};
+
 struct dyld_chained_fixups_header
 {
     uint32_t    fixups_version;
@@ -148,11 +156,19 @@ struct dylinker_command {
    union lc_str name;
 };
 
-struct linkedit_data_command {
+struct source_version_command {
   uint32_t cmd;
   uint32_t cmdsize;
-  uint32_t dataoff;
-  uint32_t datasize;
+  uint64_t version;
+};
+
+struct build_version_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint32_t platform;
+  uint32_t minos;
+  uint32_t sdk;
+  uint32_t ntools;
 };
 
 // ---------------------------------------------------------------------

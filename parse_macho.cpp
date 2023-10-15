@@ -80,6 +80,14 @@ void print_bytes(uint8_t *data, size_t size) {
     std::cout << std::endl;
 }
 
+std::string version_to_str(uint32_t version) {
+    // X.Y.Z is encoded in nibbles xxxx.yy.zz
+    uint32_t patch = (version >>  0) & 0xFF;
+    uint32_t minor = (version >>  8) & 0xFF;
+    uint32_t major = (version >> 16) & 0xFFFF;
+    return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch);
+}
+
 /*
 uint32_t static inline string_to_uint32(const char *s) {
     // The cast from signed char to unsigned char is important,
@@ -779,13 +787,22 @@ int main() {
             std::cout << "    dataoff : " << std::to_string(p->dataoff) << std::endl;
             std::cout << "    datasize: " << std::to_string(p->datasize) << std::endl;
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
-            // TODO: we are working on this section now
             std::cout << "LC_SOURCE_VERSION" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(source_version_command) << std::endl;
+            source_version_command *p = (source_version_command*)(&data[idx]);
+            std::cout << "    version : " << std::to_string(p->version) << std::endl;
         } else if (pcmd->cmd == LC_BUILD_VERSION) {
             std::cout << "LC_BUILD_VERSION" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            std::cout << "    expect : " << sizeof(build_version_command) << std::endl;
+            build_version_command *p = (build_version_command*)(&data[idx]);
+            std::cout << "    platform: " << std::to_string(p->platform) << std::endl;
+            std::cout << "    minos   : " << version_to_str(p->minos) << std::endl;
+            std::cout << "    sdk   : " << version_to_str(p->sdk) << std::endl;
+            std::cout << "    ntools   : " << std::to_string(p->ntools) << std::endl;
         } else if (pcmd->cmd == LC_MAIN) {
+            // TODO: we are working on this section now
             std::cout << "LC_MAIN" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
