@@ -750,8 +750,15 @@ int main() {
             std::cout << "LC_LOAD_DYLINKER" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(dylinker_command) << std::endl;
-            // TODO: we ended here
+            dylinker_command *p = (dylinker_command*)(&data[idx]);
+            size_t str_idx = idx+p->name.offset;
+            std::string str = (char *)(&data[str_idx]);
+            // Note: It looks like the offset is right behind this header, and length
+            // is 20 bytes, explaining the difference between `cmdsize` and `expect`
+            std::cout << "    name offset: " << std::to_string(p->name.offset) << std::endl;
+            std::cout << "    name: " << str <<std::endl;
         } else if (pcmd->cmd == LC_CODE_SIGNATURE) {
+            // TODO: we are working on this section now
             std::cout << "LC_CODE_SIGNATURE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
