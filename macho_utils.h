@@ -148,6 +148,13 @@ struct dylinker_command {
    union lc_str name;
 };
 
+struct linkedit_data_command {
+  uint32_t cmd;
+  uint32_t cmdsize;
+  uint32_t dataoff;
+  uint32_t datasize;
+};
+
 // ---------------------------------------------------------------------
 
 // Reads a file `filename` to `data`
