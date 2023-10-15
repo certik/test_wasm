@@ -124,19 +124,12 @@ struct dylib_command {
     struct dylib dylib;
 };
 
+// Also sometimes called `linkedit_data_command`
 struct section_offset_len {
     uint32_t cmd;
     uint32_t cmdsize;
     uint32_t offset;
     uint32_t len;
-};
-
-// Same as `section_offset_len`
-struct linkedit_data_command {
-  uint32_t cmd;
-  uint32_t cmdsize;
-  uint32_t dataoff;
-  uint32_t datasize;
 };
 
 struct dyld_chained_fixups_header

@@ -768,24 +768,24 @@ int main() {
         } else if (pcmd->cmd == LC_CODE_SIGNATURE) {
             std::cout << "LC_CODE_SIGNATURE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
-            std::cout << "    expect : " << sizeof(linkedit_data_command) << std::endl;
-            linkedit_data_command *p = (linkedit_data_command*)(&data[idx]);
-            std::cout << "    dataoff : " << std::to_string(p->dataoff) << std::endl;
-            std::cout << "    datasize: " << std::to_string(p->datasize) << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
+            section_offset_len *p = (section_offset_len*)(&data[idx]);
+            std::cout << "    dataoff : " << std::to_string(p->offset) << std::endl;
+            std::cout << "    datasize: " << std::to_string(p->len) << std::endl;
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
             std::cout << "LC_FUNCTION_STARTS" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
-            std::cout << "    expect : " << sizeof(linkedit_data_command) << std::endl;
-            linkedit_data_command *p = (linkedit_data_command*)(&data[idx]);
-            std::cout << "    dataoff : " << std::to_string(p->dataoff) << std::endl;
-            std::cout << "    datasize: " << std::to_string(p->datasize) << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
+            section_offset_len *p = (section_offset_len*)(&data[idx]);
+            std::cout << "    dataoff : " << std::to_string(p->offset) << std::endl;
+            std::cout << "    datasize: " << std::to_string(p->len) << std::endl;
         } else if (pcmd->cmd == LC_DATA_IN_CODE) {
             std::cout << "LC_DATA_IN_CODE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
-            std::cout << "    expect : " << sizeof(linkedit_data_command) << std::endl;
-            linkedit_data_command *p = (linkedit_data_command*)(&data[idx]);
-            std::cout << "    dataoff : " << std::to_string(p->dataoff) << std::endl;
-            std::cout << "    datasize: " << std::to_string(p->datasize) << std::endl;
+            std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
+            section_offset_len *p = (section_offset_len*)(&data[idx]);
+            std::cout << "    dataoff : " << std::to_string(p->offset) << std::endl;
+            std::cout << "    datasize: " << std::to_string(p->len) << std::endl;
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
             std::cout << "LC_SOURCE_VERSION" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
