@@ -20,6 +20,8 @@ void set_string(char *data, const std::string &str) {
 }
 
 int main() {
+    std::cout << "Constructing `data` in memory." << std::endl;
+
     std::vector<uint8_t> data;
 
     // Header
@@ -104,6 +106,8 @@ int main() {
         };
         vec_append(data, (uint8_t*)&segment, sizeof(segment));
     }
+
+    std::cout << "Saving to `test2.x`." << std::endl;
 
     write_file("test2.x", data);
 
