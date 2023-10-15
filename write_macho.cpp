@@ -129,6 +129,125 @@ int main() {
         vec_append(data, (uint8_t*)&segment, sizeof(segment));
     }
 
+    {
+        // LC_DYLD_CHAINED_FIXUPS
+        section_offset_len s = {
+            .cmd = LC_DYLD_CHAINED_FIXUPS,
+            .cmdsize = 16,
+            .offset = 16384,
+            .len = 56,
+        };
+        vec_append(data, (uint8_t*)&s, sizeof(s));
+    }
+
+    {
+        // LC_DYLD_EXPORT_TRIE
+        section_offset_len s = {
+            .cmd = LC_DYLD_EXPORTS_TRIE,
+            .cmdsize = 16,
+            .offset = 16440,
+            .len = 48,
+        };
+        vec_append(data, (uint8_t*)&s, sizeof(s));
+    }
+
+    {
+        // LC_SYMTAB
+        symtab_command s = {
+            .cmd = LC_SYMTAB,
+            .cmdsize = 24,
+            .symoff = 16496,
+            .nsyms = 2,
+            .stroff = 16528,
+            .strsize = 32,
+        };
+        vec_append(data, (uint8_t*)&s, sizeof(s));
+    }
+
+    {
+        // LC_DYSYMTAB
+        dysymtab_command s = {
+            .cmd = LC_DYSYMTAB,
+            .cmdsize = 80,
+            .ilocalsym = 0,
+            .nlocalsym = 0,
+            .iextdefsym = 0,
+            .nextdefsym = 0,
+            .iundefsym = 0,
+            .nundefsym = 0,
+            .tocoff = 0,
+            .ntoc = 0,
+            .modtaboff = 0,
+            .nmodtab = 0,
+            .extrefsymoff = 0,
+            .nextrefsyms = 0,
+            .indirectsymoff = 0,
+            .nindirectsyms = 0,
+            .extreloff = 0,
+            .nextrel = 0,
+            .locreloff = 0,
+            .nlocrel = 0,
+        };
+        vec_append(data, (uint8_t*)&s, sizeof(s));
+    }
+
+    {
+        // LC_LOAD_DYLINKER
+        dylinker_command s = {
+            .cmd = LC_LOAD_DYLINKER,
+            .cmdsize = 32,
+            .name.offset = 12
+        };
+        vec_append(data, (uint8_t*)&s, sizeof(s));
+
+        char text[20] = "/usr/lib/dyld";
+        vec_append(data, (uint8_t*)&text, sizeof(text));
+    }
+
+    /*
+    The following load commands still have to be saved:
+
+Load command  8 LC_UUID
+    cmdsize: 24
+    expect : 24
+    UUID: 844ACFC9-A60A-3347-8BFA-2F39FC580DAE
+Load command  9 LC_BUILD_VERSION
+    cmdsize: 32
+    expect : 24
+    platform: 1
+    minos   : 12.0.0
+    sdk   : 10.17.0
+    ntools   : 1
+Load command 10 LC_SOURCE_VERSION
+    cmdsize: 16
+    expect : 16
+    version : 0
+Load command 11 LC_MAIN
+    cmdsize: 24
+    expect : 24
+    entryoff : 16288
+    stacksize: 0
+Load command 12 LC_LOAD_DYLIB
+    cmdsize: 56
+    expect : 24
+    Dylib name: /usr/lib/libSystem.B.dylib
+Load command 13 LC_FUNCTION_STARTS
+    cmdsize: 16
+    expect : 16
+    dataoff : 16488
+    datasize: 8
+Load command 14 LC_DATA_IN_CODE
+    cmdsize: 16
+    expect : 16
+    dataoff : 16496
+    datasize: 0
+Load command 15 LC_CODE_SIGNATURE
+    cmdsize: 16
+    expect : 16
+    dataoff : 16560
+    datasize: 275
+    */
+
     std::cout << "Saving to `test2.x`." << std::endl;
 
     write_file("test2.x", data);
