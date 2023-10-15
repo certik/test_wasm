@@ -24,34 +24,38 @@ int main() {
 
     std::vector<uint8_t> data;
 
-    // Header
-    mach_header_64 header = {
-        .magic = MH_MAGIC_64,
-        .cputype = CPU_TYPE_ARM64,
-        .cpusubtype = 0,
-        .filetype = 2,
-        .ncmds = 17,
-        .sizeofcmds = 1056,
-        .flags = 2097285,
-        .reserved = 0,
-    };
-    vec_append(data, (uint8_t*)&header, sizeof(header));
+    {
+        // Header
+        mach_header_64 header = {
+            .magic = MH_MAGIC_64,
+            .cputype = CPU_TYPE_ARM64,
+            .cpusubtype = 0,
+            .filetype = 2,
+            .ncmds = 17,
+            .sizeofcmds = 1056,
+            .flags = 2097285,
+            .reserved = 0,
+        };
+        vec_append(data, (uint8_t*)&header, sizeof(header));
+    }
 
-    // LC_SEGMENT_64
-    segment_command_64 segment = {
-        .cmd = LC_SEGMENT_64,
-        .cmdsize = 72,
-        .segname = "__PAGEZERO",
-        .vmaddr = 0,
-        .vmsize = 0x100000000,
-        .fileoff = 0,
-        .filesize = 0,
-        .maxprot = 0,
-        .initprot = 0,
-        .nsects = 0,
-        .flags = 0,
-    };
-    vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    {
+        // LC_SEGMENT_64
+        segment_command_64 segment = {
+            .cmd = LC_SEGMENT_64,
+            .cmdsize = 72,
+            .segname = "__PAGEZERO",
+            .vmaddr = 0,
+            .vmsize = 0x100000000,
+            .fileoff = 0,
+            .filesize = 0,
+            .maxprot = 0,
+            .initprot = 0,
+            .nsects = 0,
+            .flags = 0,
+        };
+        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+    }
 
     {
         // LC_SEGMENT_64
