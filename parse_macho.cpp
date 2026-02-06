@@ -485,6 +485,10 @@ std::string decode_instruction(uint32_t inst) {
             // svc
             uint32_t imm16 = (inst >>  5) & 0xffff;
             return a64::svc(imm16);
+        } else if ((inst & 0xfffffc1f) == 0xd61f0000) {
+            // C5.6.26 BR
+            uint32_t Rn = (inst >> 5) & 0b11111;
+            return "br " + reg(1, Rn, 1);
         } else if (inst >> 12 == 0xd65f0) {
             // C5.6.148 RET
             return a64::ret();
@@ -690,6 +694,130 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     }
 }
 
+uint32_t read_u32(const std::vector<uint8_t> &data, size_t offset) {
+    ASSERT(offset + 4 <= data.size())
+    return (uint32_t)data[offset]
+        | ((uint32_t)data[offset + 1] << 8)
+        | ((uint32_t)data[offset + 2] << 16)
+        | ((uint32_t)data[offset + 3] << 24);
+}
+
+uint64_t read_u64(const std::vector<uint8_t> &data, size_t offset) {
+    ASSERT(offset + 8 <= data.size())
+    return (uint64_t)data[offset]
+        | ((uint64_t)data[offset + 1] << 8)
+        | ((uint64_t)data[offset + 2] << 16)
+        | ((uint64_t)data[offset + 3] << 24)
+        | ((uint64_t)data[offset + 4] << 32)
+        | ((uint64_t)data[offset + 5] << 40)
+        | ((uint64_t)data[offset + 6] << 48)
+        | ((uint64_t)data[offset + 7] << 56);
+}
+
+uint64_t read_uleb128(const std::vector<uint8_t> &data, size_t begin, size_t end,
+        size_t &cursor) {
+    ASSERT(cursor >= begin)
+    ASSERT(cursor <= end)
+    uint64_t value = 0;
+    unsigned shift = 0;
+    while (cursor < end) {
+        uint8_t byte = data[cursor++];
+        value |= ((uint64_t)(byte & 0x7f)) << shift;
+        if ((byte & 0x80) == 0) {
+            return value;
+        }
+        shift += 7;
+        ASSERT(shift < 64)
+    }
+    ASSERT(false && "invalid uleb128")
+    return 0;
+}
+
+void decode_cstring_section(const std::vector<uint8_t> &data, uint32_t offset,
+        uint64_t size, uint64_t addr) {
+    std::cout << "        C strings:" << std::endl;
+    size_t start = offset;
+    size_t end = offset + size;
+    size_t i = start;
+    size_t idx = 0;
+    while (i < end) {
+        size_t s = i;
+        while (i < end && data[i] != '\0') i++;
+        std::string value((const char*)&data[s], i - s);
+        std::cout << "            [" << idx << "] addr=0x" << std::hex
+            << (addr + (s - start)) << std::dec << " \"" << value << "\""
+            << std::endl;
+        idx++;
+        while (i < end && data[i] == '\0') i++;
+    }
+}
+
+void decode_pointer_section(const std::vector<uint8_t> &data, uint32_t offset,
+        uint64_t size, uint64_t addr) {
+    if ((size % 8) != 0) {
+        std::cout << "        Pointer decode skipped: size not multiple of 8"
+            << std::endl;
+        return;
+    }
+    size_t n = size / 8;
+    std::cout << "        Pointers (" << n << "):" << std::endl;
+    for (size_t i = 0; i < n; i++) {
+        uint64_t value = read_u64(data, offset + i * 8);
+        std::cout << "            [" << i << "] addr=0x" << std::hex
+            << (addr + i * 8) << " -> 0x" << value << std::dec << std::endl;
+    }
+}
+
+void decode_relocations(const std::vector<uint8_t> &data, uint32_t reloff,
+        uint32_t nreloc, uint64_t section_addr) {
+    if (nreloc == 0) return;
+    std::cout << "        Relocations (" << nreloc << "):" << std::endl;
+    for (size_t i = 0; i < nreloc; i++) {
+        size_t r = reloff + i * 8;
+        uint32_t w0 = read_u32(data, r + 0);
+        uint32_t w1 = read_u32(data, r + 4);
+        int32_t r_address = (int32_t)w0;
+        uint32_t r_symbolnum = w1 & 0x00ffffff;
+        uint32_t r_pcrel = (w1 >> 24) & 0x1;
+        uint32_t r_length = (w1 >> 25) & 0x3;
+        uint32_t r_extern = (w1 >> 27) & 0x1;
+        uint32_t r_type = (w1 >> 28) & 0xf;
+        std::cout << "            [" << i << "] r_address=" << r_address
+            << " (vmaddr=0x" << std::hex << (section_addr + r_address)
+            << std::dec << ") r_symbolnum=" << r_symbolnum
+            << " r_pcrel=" << r_pcrel
+            << " r_length=" << r_length
+            << " r_extern=" << r_extern
+            << " r_type=" << r_type
+            << std::endl;
+    }
+}
+
+void decode_literal_words(const std::vector<uint8_t> &data, uint32_t offset,
+        uint64_t size, uint64_t addr, uint32_t width) {
+    ASSERT(width == 4 || width == 8)
+    if (size % width != 0) {
+        std::cout << "        Literal decode skipped: size not multiple of "
+            << width << std::endl;
+        return;
+    }
+    size_t n = size / width;
+    std::cout << "        Literal " << (width * 8) << "-bit values (" << n
+        << "):" << std::endl;
+    for (size_t i = 0; i < n; i++) {
+        if (width == 4) {
+            uint32_t value = read_u32(data, offset + i * width);
+            std::cout << "            [" << i << "] addr=0x" << std::hex
+                << (addr + i * width) << " value=0x" << value << std::dec
+                << std::endl;
+        } else {
+            uint64_t value = read_u64(data, offset + i * width);
+            std::cout << "            [" << i << "] addr=0x" << std::hex
+                << (addr + i * width) << " value=0x" << value << std::dec
+                << std::endl;
+        }
+    }
+}
 struct nlist_64_local {
     uint32_t n_strx;
     uint8_t n_type;
@@ -727,6 +855,8 @@ int main(int argc, char **argv) {
     std::cout << "    flags: " << pheader->flags << std::endl;
     std::cout << "    reserved: " << pheader->reserved << std::endl;
     maybe_print_data_range(raw_dump, data, 0, sizeof(mach_header_64), "    ");
+    uint64_t image_vmaddr_base = 0;
+    bool image_vmaddr_base_valid = false;
     size_t idx = sizeof(mach_header_64);
     for (size_t ncmd=0; ncmd < pheader->ncmds; ncmd++) {
         ASSERT(idx + sizeof(load_command) <= data.size())
@@ -758,6 +888,11 @@ int main(int argc, char **argv) {
             std::cout << "    initprot: " << perm2str(p->initprot) << " (" << p->initprot << ")" << std::endl;
             std::cout << "    nsects: " << p->nsects << std::endl;
             std::cout << "    flags: " << p->flags << std::endl;
+            if (!image_vmaddr_base_valid
+                    && ascii_or_empty(p->segname, sizeof(p->segname)) == "__TEXT") {
+                image_vmaddr_base = p->vmaddr;
+                image_vmaddr_base_valid = true;
+            }
             maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             if (p->filesize > 0) {
                 ASSERT(p->fileoff <= data.size())
@@ -796,17 +931,49 @@ int main(int argc, char **argv) {
                     ASSERT(s->reloff <= data.size())
                     ASSERT(reloc_size <= data.size() - s->reloff)
                     maybe_print_data_range(raw_dump, data, s->reloff, reloc_size, "        ");
+                    decode_relocations(data, s->reloff, s->nreloc, s->addr);
                 }
 
-                if (sectname == "__cstring" && !is_zerofill) {
-                    std::cout << "        C string: \""
-                        << std::string((char*)&data[s->offset], s->size)
-                        << "\"" << std::endl;
-                } else if (sectname == "__text" && !is_zerofill) {
-                    uint64_t n = s->size/4;
-                    ASSERT(n*4 == s->size)
-                    decode_instructions((uint32_t*)&data[s->offset], n,
-                        s->addr);
+                if (!is_zerofill && s->size > 0) {
+                    uint32_t stype = section_type;
+                    if (stype == 2 || sectname == "__cstring") {
+                        decode_cstring_section(data, s->offset, s->size, s->addr);
+                    } else if (stype == 8 || sectname == "__text"
+                            || sectname == "__stubs"
+                            || sectname == "__stub_helper") {
+                        if (sectname == "__stubs" && s->reserved2 > 0
+                                && s->size % s->reserved2 == 0) {
+                            size_t nstubs = s->size / s->reserved2;
+                            std::cout << "        Symbol stubs (" << nstubs
+                                << "), stub size: " << s->reserved2 << std::endl;
+                            for (size_t i = 0; i < nstubs; i++) {
+                                size_t stub_off = s->offset + i * s->reserved2;
+                                uint64_t stub_addr = s->addr + i * s->reserved2;
+                                if (s->reserved2 % 4 == 0) {
+                                    size_t ninstr = s->reserved2 / 4;
+                                    std::cout << "        Stub " << i << ":" << std::endl;
+                                    decode_instructions((uint32_t*)&data[stub_off],
+                                        ninstr, stub_addr);
+                                }
+                            }
+                        } else {
+                            uint64_t n = s->size / 4;
+                            ASSERT(n * 4 == s->size)
+                            decode_instructions((uint32_t*)&data[s->offset], n,
+                                s->addr);
+                        }
+                    } else if (stype == 6 || stype == 7 || stype == 9
+                            || stype == 10 || sectname == "__got"
+                            || sectname == "__la_symbol_ptr") {
+                        decode_pointer_section(data, s->offset, s->size, s->addr);
+                    } else if (stype == 4) {
+                        decode_literal_words(data, s->offset, s->size, s->addr, 8);
+                    } else if (stype == 3) {
+                        decode_literal_words(data, s->offset, s->size, s->addr, 4);
+                    } else {
+                        // Generic fallback for any unhandled section type.
+                        decode_literal_words(data, s->offset, s->size, s->addr, 4);
+                    }
                 }
             }
         } else if (pcmd->cmd == LC_SYMTAB) {
@@ -917,6 +1084,24 @@ int main(int argc, char **argv) {
                 ASSERT(p->offset <= data.size())
                 ASSERT(p->len <= data.size() - p->offset)
                 maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+                std::cout << "    decoded function starts:" << std::endl;
+                size_t begin = p->offset;
+                size_t end = p->offset + p->len;
+                size_t cursor = begin;
+                uint64_t func_off = 0;
+                size_t nfunc = 0;
+                while (cursor < end) {
+                    uint64_t delta = read_uleb128(data, begin, end, cursor);
+                    if (delta == 0) break;
+                    func_off += delta;
+                    std::cout << "        [" << nfunc << "] fileoff=" << func_off;
+                    if (image_vmaddr_base_valid) {
+                        std::cout << " vmaddr=0x" << std::hex
+                            << (image_vmaddr_base + func_off) << std::dec;
+                    }
+                    std::cout << std::endl;
+                    nfunc++;
+                }
             }
         } else if (pcmd->cmd == LC_DATA_IN_CODE) {
             std::cout << "LC_DATA_IN_CODE" << std::endl;
@@ -930,6 +1115,27 @@ int main(int argc, char **argv) {
                 ASSERT(p->offset <= data.size())
                 ASSERT(p->len <= data.size() - p->offset)
                 maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+                if (p->len % 8 == 0) {
+                    size_t n = p->len / 8;
+                    std::cout << "    decoded data-in-code entries: " << n
+                        << std::endl;
+                    for (size_t i = 0; i < n; i++) {
+                        size_t off = p->offset + i * 8;
+                        uint32_t entry_off = read_u32(data, off);
+                        uint16_t entry_len = (uint16_t)(data[off + 4]
+                            | ((uint16_t)data[off + 5] << 8));
+                        uint16_t entry_kind = (uint16_t)(data[off + 6]
+                            | ((uint16_t)data[off + 7] << 8));
+                        std::cout << "        [" << i << "] offset=" << entry_off
+                            << " length=" << entry_len
+                            << " kind=" << entry_kind;
+                        if (image_vmaddr_base_valid) {
+                            std::cout << " vmaddr=0x" << std::hex
+                                << (image_vmaddr_base + entry_off) << std::dec;
+                        }
+                        std::cout << std::endl;
+                    }
+                }
             }
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
             std::cout << "LC_SOURCE_VERSION" << std::endl;
