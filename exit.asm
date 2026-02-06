@@ -2,9 +2,16 @@
 .global _main
 .align 4
 _main:
-        mov x1, #5
-        mov x2, #6
-        add x0, x1, x2
-        ; mov x0, #42     ; exit code
-        mov x16, #1     ; syscall number for exit
-        svc #0x80       ; do the syscall!
+        mov x0, #1                      ; fd = stdout
+        adrp x1, msg@PAGE               ; buf = &msg
+        add x1, x1, msg@PAGEOFF
+        mov x2, #msg_len                ; count = msg_len
+        bl _write
+
+        mov x0, #42                     ; exit code
+        bl _exit
+
+.section __TEXT,__cstring,cstring_literals
+msg:
+        .asciz "hello from libSystem write()\n"
+.set msg_len, . - msg - 1
