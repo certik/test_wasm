@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "macho_utils.h"
@@ -14,17 +16,326 @@
         } \
     } while (0)
 
-static void vec_append(std::vector<uint8_t> &data, const void *item, size_t item_size) {
+static void vec_append(std::vector<uint8_t> &data, const void *item, size_t size) {
     const uint8_t *p = (const uint8_t *)item;
-    data.insert(data.end(), p, p + item_size);
+    data.insert(data.end(), p, p + size);
 }
 
-static void vec_append_zeros(std::vector<uint8_t> &data, size_t n) {
-    data.insert(data.end(), n, 0);
+static void append_u8(std::vector<uint8_t> &out, uint8_t v) {
+    out.push_back(v);
 }
 
-static void vec_append_blob(std::vector<uint8_t> &data, const uint8_t *blob, size_t n) {
-    data.insert(data.end(), blob, blob + n);
+static void append_le16(std::vector<uint8_t> &out, uint16_t v) {
+    out.push_back((uint8_t)(v & 0xff));
+    out.push_back((uint8_t)((v >> 8) & 0xff));
+}
+
+static void append_le32(std::vector<uint8_t> &out, uint32_t v) {
+    out.push_back((uint8_t)(v & 0xff));
+    out.push_back((uint8_t)((v >> 8) & 0xff));
+    out.push_back((uint8_t)((v >> 16) & 0xff));
+    out.push_back((uint8_t)((v >> 24) & 0xff));
+}
+
+static void append_le64(std::vector<uint8_t> &out, uint64_t v) {
+    for (int i = 0; i < 8; i++) {
+        out.push_back((uint8_t)((v >> (8 * i)) & 0xff));
+    }
+}
+
+static void append_be32(std::vector<uint8_t> &out, uint32_t v) {
+    out.push_back((uint8_t)((v >> 24) & 0xff));
+    out.push_back((uint8_t)((v >> 16) & 0xff));
+    out.push_back((uint8_t)((v >> 8) & 0xff));
+    out.push_back((uint8_t)(v & 0xff));
+}
+
+static void append_uleb128(std::vector<uint8_t> &out, uint64_t value) {
+    do {
+        uint8_t byte = (uint8_t)(value & 0x7f);
+        value >>= 7;
+        if (value != 0) byte |= 0x80;
+        out.push_back(byte);
+    } while (value != 0);
+}
+
+static void append_cstr(std::vector<uint8_t> &out, const std::string &s) {
+    out.insert(out.end(), s.begin(), s.end());
+    out.push_back('\0');
+}
+
+static void append_padding_to(std::vector<uint8_t> &out, size_t target_size) {
+    REQUIRE(out.size() <= target_size);
+    out.insert(out.end(), target_size - out.size(), 0);
+}
+
+static std::vector<uint8_t> hex_to_bytes(const std::string &hex) {
+    REQUIRE((hex.size() % 2) == 0);
+    std::vector<uint8_t> out;
+    out.reserve(hex.size() / 2);
+    auto nib = [](char c) -> uint8_t {
+        if (c >= '0' && c <= '9') return (uint8_t)(c - '0');
+        if (c >= 'a' && c <= 'f') return (uint8_t)(10 + c - 'a');
+        if (c >= 'A' && c <= 'F') return (uint8_t)(10 + c - 'A');
+        REQUIRE(false);
+        return 0;
+    };
+    for (size_t i = 0; i < hex.size(); i += 2) {
+        out.push_back((uint8_t)((nib(hex[i]) << 4) | nib(hex[i + 1])));
+    }
+    return out;
+}
+
+static std::vector<uint8_t> build_text_bytes() {
+    // _main in exit.asm:
+    //   mov x0,#1 ; adrp/add for msg ; mov x2,#msg_len ; bl _write ; mov x0,#42 ; bl _exit
+    const uint32_t instrs[] = {
+        0xd2800020, 0x90000001, 0x91111021, 0xd28003a2,
+        0x94000006, 0xd2800540, 0x94000001,
+    };
+    std::vector<uint8_t> out;
+    for (uint32_t inst : instrs) append_le32(out, inst);
+    REQUIRE(out.size() == 28);
+    return out;
+}
+
+static std::vector<uint8_t> build_stub_bytes() {
+    // 2 symbol stubs, 12 bytes each
+    const uint32_t stub0[] = {0x90000030, 0xf9400210, 0xd61f0200};
+    const uint32_t stub1[] = {0x90000030, 0xf9400610, 0xd61f0200};
+    std::vector<uint8_t> out;
+    for (uint32_t inst : stub0) append_le32(out, inst);
+    for (uint32_t inst : stub1) append_le32(out, inst);
+    REQUIRE(out.size() == 24);
+    return out;
+}
+
+static std::vector<uint8_t> build_cstring_bytes() {
+    std::vector<uint8_t> out;
+    append_cstr(out, "hello from libSystem write()\n");
+    append_cstr(out, "hello from libSystem write()\n");
+    REQUIRE(out.size() == 60);
+    return out;
+}
+
+static std::vector<uint8_t> build_got_bytes() {
+    // Entries as emitted by ld/dyld chained fixups.
+    std::vector<uint8_t> out;
+    append_le64(out, 0x8010000000000000ULL);
+    append_le64(out, 0x8000000000000001ULL);
+    REQUIRE(out.size() == 16);
+    return out;
+}
+
+static std::vector<uint8_t> build_chained_fixups_blob() {
+    std::vector<uint8_t> out;
+
+    // dyld_chained_fixups_header
+    append_le32(out, 0);      // fixups_version
+    append_le32(out, 0x20);   // starts_offset
+    append_le32(out, 0x50);   // imports_offset
+    append_le32(out, 0x58);   // symbols_offset
+    append_le32(out, 2);      // imports_count
+    append_le32(out, 1);      // imports_format (DYLD_CHAINED_IMPORT)
+    append_le32(out, 0);      // symbols_format
+
+    append_le32(out, 0);      // pad to starts_offset
+
+    // dyld_chained_starts_in_image
+    append_le32(out, 4);      // seg_count
+    append_le32(out, 0);      // __PAGEZERO
+    append_le32(out, 0);      // __TEXT
+    append_le32(out, 0x18);   // __DATA_CONST starts info offset from starts_in_image
+    append_le32(out, 0);      // __LINKEDIT
+    append_le32(out, 0);      // alignment padding before starts_in_segment
+
+    // dyld_chained_starts_in_segment for __DATA_CONST
+    append_le32(out, 0x18);   // size
+    append_le16(out, 0x4000); // page_size
+    append_le16(out, 6);      // pointer_format
+    append_le64(out, 0x4000); // segment_offset
+    append_le32(out, 0);      // max_valid_pointer
+    append_le16(out, 1);      // page_count
+    append_le16(out, 0);      // page_start[0]
+
+    // 2 imports (lib ordinal 1, name offsets 2 and 14 in symbols table)
+    append_le32(out, 0x00000201);
+    append_le32(out, 0x00000e01);
+
+    // symbols table (imports strings)
+    append_u8(out, 0x00);
+    append_cstr(out, "_exit");
+    append_cstr(out, "_write");
+    append_u8(out, 0x00);
+    append_u8(out, 0x00);
+
+    REQUIRE(out.size() == 104);
+    return out;
+}
+
+static std::vector<uint8_t> build_exports_trie_blob() {
+    std::vector<uint8_t> out;
+
+    // This is the dyld exports trie for two exports:
+    //   __mh_execute_header -> 0x0
+    //   _main               -> 0x410
+    // Encoded in compact trie form (matching ld output).
+    append_u8(out, 0x00);
+    append_u8(out, 0x01);
+    append_cstr(out, "_");
+    append_uleb128(out, 0x12);
+    append_u8(out, 0x00);
+    append_u8(out, 0x00);
+    append_u8(out, 0x00);
+
+    append_u8(out, 0x00);
+    append_u8(out, 0x02);
+
+    append_u8(out, 0x00);
+    append_u8(out, 0x00);
+    append_u8(out, 0x00);
+
+    append_u8(out, 0x03);
+    append_u8(out, 0x00);
+    append_uleb128(out, 0x410);
+    append_u8(out, 0x00);
+
+    append_u8(out, 0x00);
+    append_u8(out, 0x02);
+    append_cstr(out, "_mh_execute_header");
+    append_uleb128(out, 0x09);
+    append_cstr(out, "main");
+    append_uleb128(out, 0x0d);
+    append_u8(out, 0x00);
+    append_u8(out, 0x00);
+
+    REQUIRE(out.size() == 48);
+    return out;
+}
+
+struct SymbolDef {
+    std::string name;
+    uint8_t n_type;
+    uint8_t n_sect;
+    uint16_t n_desc;
+    uint64_t n_value;
+};
+
+static void build_symbol_and_string_tables(std::vector<uint8_t> &symtab,
+        std::vector<uint8_t> &indirect_syms,
+        std::vector<uint8_t> &strtab) {
+    const std::vector<std::string> name_pool = {
+        "__mh_execute_header", "_main", "_exit", "_write", "msg", "msg_len"
+    };
+
+    strtab.clear();
+    strtab.push_back(0x20); // preserve original leading bytes
+    strtab.push_back(0x00);
+
+    std::unordered_map<std::string, uint32_t> strx;
+    for (const auto &name : name_pool) {
+        strx[name] = (uint32_t)strtab.size();
+        append_cstr(strtab, name);
+    }
+    append_padding_to(strtab, 56);
+
+    const std::vector<SymbolDef> symbols = {
+        {"msg",                 0x0e, 3, 0x0000, 0x100000444ULL},
+        {"msg_len",             0x02, 0, 0x0000, 0x000000001dULL},
+        {"__mh_execute_header", 0x0f, 1, 0x0010, 0x100000000ULL},
+        {"_main",               0x0f, 1, 0x0000, 0x100000410ULL},
+        {"_exit",               0x01, 0, 0x0100, 0x0ULL},
+        {"_write",              0x01, 0, 0x0100, 0x0ULL},
+    };
+
+    symtab.clear();
+    for (const auto &s : symbols) {
+        append_le32(symtab, strx[s.name]);
+        append_u8(symtab, s.n_type);
+        append_u8(symtab, s.n_sect);
+        append_le16(symtab, s.n_desc);
+        append_le64(symtab, s.n_value);
+    }
+    REQUIRE(symtab.size() == 96);
+
+    indirect_syms.clear();
+    append_le32(indirect_syms, 4);
+    append_le32(indirect_syms, 5);
+    append_le32(indirect_syms, 4);
+    append_le32(indirect_syms, 5);
+    REQUIRE(indirect_syms.size() == 16);
+}
+
+static std::vector<uint8_t> build_function_starts_blob() {
+    std::vector<uint8_t> out;
+    append_uleb128(out, 0x410); // first function at file offset 1040
+    append_u8(out, 0x00);       // terminator
+    while (out.size() < 8) append_u8(out, 0x00);
+    REQUIRE(out.size() == 8);
+    return out;
+}
+
+static std::vector<uint8_t> build_code_signature_blob() {
+    // Build CodeDirectory + SuperBlob from structured fields.
+    const std::vector<std::string> page_hashes = {
+        "dd39086ccb43601a8fea32ac8b15142c9caf96cd380bb4c6378a982596c54ed9",
+        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
+        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
+        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
+        "6152b47e6ad48aca048c42a48200697cbfa06c8a79ca116c5cee4b34827916a8",
+        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
+        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
+        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
+        "831e18cba1224872dd12d4fc7b945b189431bb64644f356f77e65b5e4f607a02",
+    };
+
+    std::vector<uint8_t> cd;
+    append_be32(cd, 0xfade0c02); // CSMAGIC_CODEDIRECTORY
+    append_be32(cd, 383);        // length
+    append_be32(cd, 0x00020400); // version
+    append_be32(cd, 0x00020002); // flags
+    append_be32(cd, 95);         // hashOffset
+    append_be32(cd, 88);         // identOffset
+    append_be32(cd, 0);          // nSpecialSlots
+    append_be32(cd, 9);          // nCodeSlots
+    append_be32(cd, 33104);      // codeLimit
+    append_u8(cd, 32);           // hashSize
+    append_u8(cd, 2);            // hashType (SHA-256)
+    append_u8(cd, 0);            // platform
+    append_u8(cd, 12);           // pageSize (2^12)
+    append_be32(cd, 0);          // spare2
+    append_be32(cd, 0);          // scatterOffset
+    append_be32(cd, 0);          // teamOffset
+
+    // Reserved/extended CodeDirectory fields before identifier.
+    append_padding_to(cd, 76);
+    append_be32(cd, 0x1c);
+    append_be32(cd, 0x0);
+    append_be32(cd, 0x1);
+    REQUIRE(cd.size() == 88);
+
+    append_cstr(cd, "test.x");
+    REQUIRE(cd.size() == 95);
+
+    for (const auto &h : page_hashes) {
+        std::vector<uint8_t> bytes = hex_to_bytes(h);
+        REQUIRE(bytes.size() == 32);
+        cd.insert(cd.end(), bytes.begin(), bytes.end());
+    }
+    REQUIRE(cd.size() == 383);
+
+    std::vector<uint8_t> superblob;
+    append_be32(superblob, 0xfade0cc0); // CSMAGIC_EMBEDDED_SIGNATURE
+    append_be32(superblob, 403);        // length
+    append_be32(superblob, 1);          // count
+    append_be32(superblob, 0);          // CSSLOT_CODEDIRECTORY
+    append_be32(superblob, 20);         // offset of CodeDirectory
+    superblob.insert(superblob.end(), cd.begin(), cd.end());
+    REQUIRE(superblob.size() == 403);
+
+    append_padding_to(superblob, 408); // LC_CODE_SIGNATURE datasize
+    REQUIRE(superblob.size() == 408);
+    return superblob;
 }
 
 int main() {
@@ -33,7 +344,6 @@ int main() {
     std::vector<uint8_t> data;
     data.reserve(33512);
 
-    // Header + load commands exactly matching test.x produced by ld.
     {
         mach_header_64 header = {
             .magic = MH_MAGIC_64,
@@ -177,37 +487,17 @@ int main() {
     }
 
     {
-        section_offset_len s = {
-            .cmd = LC_DYLD_CHAINED_FIXUPS,
-            .cmdsize = 16,
-            .offset = 32768,
-            .len = 104,
-        };
+        section_offset_len s = {.cmd = LC_DYLD_CHAINED_FIXUPS, .cmdsize = 16, .offset = 32768, .len = 104};
         vec_append(data, &s, sizeof(s));
     }
-
     {
-        section_offset_len s = {
-            .cmd = LC_DYLD_EXPORTS_TRIE,
-            .cmdsize = 16,
-            .offset = 32872,
-            .len = 48,
-        };
+        section_offset_len s = {.cmd = LC_DYLD_EXPORTS_TRIE, .cmdsize = 16, .offset = 32872, .len = 48};
         vec_append(data, &s, sizeof(s));
     }
-
     {
-        symtab_command s = {
-            .cmd = LC_SYMTAB,
-            .cmdsize = 24,
-            .symoff = 32928,
-            .nsyms = 6,
-            .stroff = 33040,
-            .strsize = 56,
-        };
+        symtab_command s = {.cmd = LC_SYMTAB, .cmdsize = 24, .symoff = 32928, .nsyms = 6, .stroff = 33040, .strsize = 56};
         vec_append(data, &s, sizeof(s));
     }
-
     {
         dysymtab_command s = {
             .cmd = LC_DYSYMTAB,
@@ -233,18 +523,12 @@ int main() {
         };
         vec_append(data, &s, sizeof(s));
     }
-
     {
-        dylinker_command s = {
-            .cmd = LC_LOAD_DYLINKER,
-            .cmdsize = 32,
-            .name.offset = 12,
-        };
+        dylinker_command s = {.cmd = LC_LOAD_DYLINKER, .cmdsize = 32, .name = {.offset = 12}};
         vec_append(data, &s, sizeof(s));
         const char dyld_name[20] = "/usr/lib/dyld";
         vec_append(data, dyld_name, sizeof(dyld_name));
     }
-
     {
         uuid_command s = {
             .cmd = LC_UUID,
@@ -254,7 +538,6 @@ int main() {
         };
         vec_append(data, &s, sizeof(s));
     }
-
     {
         build_version_command s = {
             .cmd = LC_BUILD_VERSION,
@@ -265,32 +548,17 @@ int main() {
             .ntools = 1,
         };
         vec_append(data, &s, sizeof(s));
-        const uint8_t build_tool_version[8] = {
-            0x03, 0x00, 0x00, 0x00,
-            0x00, 0x01, 0xce, 0x04,
-        };
-        vec_append_blob(data, build_tool_version, sizeof(build_tool_version));
+        append_le32(data, 3);          // TOOL_LD
+        append_le32(data, 0x04ce0100); // tool version
     }
-
     {
-        source_version_command s = {
-            .cmd = LC_SOURCE_VERSION,
-            .cmdsize = 16,
-            .version = 0,
-        };
+        source_version_command s = {.cmd = LC_SOURCE_VERSION, .cmdsize = 16, .version = 0};
         vec_append(data, &s, sizeof(s));
     }
-
     {
-        entry_point_command s = {
-            .cmd = LC_MAIN,
-            .cmdsize = 24,
-            .entryoff = 1040,
-            .stacksize = 0,
-        };
+        entry_point_command s = {.cmd = LC_MAIN, .cmdsize = 24, .entryoff = 1040, .stacksize = 0};
         vec_append(data, &s, sizeof(s));
     }
-
     {
         dylib_command s = {
             .cmd = LC_LOAD_DYLIB,
@@ -306,195 +574,60 @@ int main() {
         const char libsystem_name[32] = "/usr/lib/libSystem.B.dylib";
         vec_append(data, libsystem_name, sizeof(libsystem_name));
     }
-
     {
-        section_offset_len s = {
-            .cmd = LC_FUNCTION_STARTS,
-            .cmdsize = 16,
-            .offset = 32920,
-            .len = 8,
-        };
+        section_offset_len s = {.cmd = LC_FUNCTION_STARTS, .cmdsize = 16, .offset = 32920, .len = 8};
         vec_append(data, &s, sizeof(s));
     }
-
     {
-        section_offset_len s = {
-            .cmd = LC_DATA_IN_CODE,
-            .cmdsize = 16,
-            .offset = 32928,
-            .len = 0,
-        };
+        section_offset_len s = {.cmd = LC_DATA_IN_CODE, .cmdsize = 16, .offset = 32928, .len = 0};
         vec_append(data, &s, sizeof(s));
     }
-
     {
-        section_offset_len s = {
-            .cmd = LC_CODE_SIGNATURE,
-            .cmdsize = 16,
-            .offset = 33104,
-            .len = 408,
-        };
+        section_offset_len s = {.cmd = LC_CODE_SIGNATURE, .cmdsize = 16, .offset = 33104, .len = 408};
         vec_append(data, &s, sizeof(s));
     }
 
     REQUIRE(data.size() == 1008);
 
-    // __TEXT payload pieces
-    if (data.size() < 1040) vec_append_zeros(data, 1040 - data.size());
-    const uint8_t text_bytes[28] = {
-        0x20, 0x00, 0x80, 0xd2, 0x01, 0x00, 0x00, 0x90,
-        0x21, 0x10, 0x11, 0x91, 0xa2, 0x03, 0x80, 0xd2,
-        0x06, 0x00, 0x00, 0x94, 0x40, 0x05, 0x80, 0xd2,
-        0x01, 0x00, 0x00, 0x94,
-    };
-    REQUIRE(data.size() == 1040);
-    vec_append_blob(data, text_bytes, sizeof(text_bytes));
+    append_padding_to(data, 1040);
+    std::vector<uint8_t> text = build_text_bytes();
+    data.insert(data.end(), text.begin(), text.end());
 
-    const uint8_t stubs_bytes[24] = {
-        0x30, 0x00, 0x00, 0x90, 0x10, 0x02, 0x40, 0xf9,
-        0x00, 0x02, 0x1f, 0xd6, 0x30, 0x00, 0x00, 0x90,
-        0x10, 0x06, 0x40, 0xf9, 0x00, 0x02, 0x1f, 0xd6,
-    };
     REQUIRE(data.size() == 1068);
-    vec_append_blob(data, stubs_bytes, sizeof(stubs_bytes));
+    std::vector<uint8_t> stubs = build_stub_bytes();
+    data.insert(data.end(), stubs.begin(), stubs.end());
 
-    const uint8_t cstring_bytes[60] = {
-        0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x66, 0x72, 0x6f, 0x6d,
-        0x20, 0x6c, 0x69, 0x62, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d,
-        0x20, 0x77, 0x72, 0x69, 0x74, 0x65, 0x28, 0x29, 0x0a, 0x00,
-        0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x66, 0x72, 0x6f, 0x6d,
-        0x20, 0x6c, 0x69, 0x62, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d,
-        0x20, 0x77, 0x72, 0x69, 0x74, 0x65, 0x28, 0x29, 0x0a, 0x00,
-    };
     REQUIRE(data.size() == 1092);
-    vec_append_blob(data, cstring_bytes, sizeof(cstring_bytes));
+    std::vector<uint8_t> cstr = build_cstring_bytes();
+    data.insert(data.end(), cstr.begin(), cstr.end());
 
-    // Pad __TEXT to one page.
-    if (data.size() < 16384) vec_append_zeros(data, 16384 - data.size());
-    REQUIRE(data.size() == 16384);
+    append_padding_to(data, 16384);
+    std::vector<uint8_t> got = build_got_bytes();
+    data.insert(data.end(), got.begin(), got.end());
 
-    // __DATA_CONST (__got then zero padding)
-    const uint8_t got_bytes[16] = {
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x80,
-        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
-    };
-    vec_append_blob(data, got_bytes, sizeof(got_bytes));
-    if (data.size() < 32768) vec_append_zeros(data, 32768 - data.size());
-    REQUIRE(data.size() == 32768);
+    append_padding_to(data, 32768);
 
-    // __LINKEDIT payload blobs.
-    const uint8_t chained_fixups[104] = {
-        0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
-        0x50, 0x00, 0x00, 0x00, 0x58, 0x00, 0x00, 0x00,
-        0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x18, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00,
-        0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x01, 0x02, 0x00, 0x00, 0x01, 0x0e, 0x00, 0x00,
-        0x00, 0x5f, 0x65, 0x78, 0x69, 0x74, 0x00, 0x5f,
-        0x77, 0x72, 0x69, 0x74, 0x65, 0x00, 0x00, 0x00,
-    };
+    std::vector<uint8_t> chained_fixups = build_chained_fixups_blob();
+    std::vector<uint8_t> exports_trie = build_exports_trie_blob();
+    std::vector<uint8_t> function_starts = build_function_starts_blob();
+    std::vector<uint8_t> symtab;
+    std::vector<uint8_t> indirect_syms;
+    std::vector<uint8_t> strtab;
+    build_symbol_and_string_tables(symtab, indirect_syms, strtab);
+    std::vector<uint8_t> codesig = build_code_signature_blob();
 
-    const uint8_t exports_trie[48] = {
-        0x00, 0x01, 0x5f, 0x00, 0x12, 0x00, 0x00, 0x00,
-        0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x90,
-        0x08, 0x00, 0x00, 0x02, 0x5f, 0x6d, 0x68, 0x5f,
-        0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f,
-        0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x00, 0x09,
-        0x6d, 0x61, 0x69, 0x6e, 0x00, 0x0d, 0x00, 0x00,
-    };
-
-    const uint8_t function_starts[8] = {
-        0x90, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    };
-
-    const uint8_t symtab_bytes[96] = {
-        0x29, 0x00, 0x00, 0x00, 0x0e, 0x03, 0x00, 0x00,
-        0x44, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x2d, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-        0x1d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x02, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x10, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x16, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x00, 0x00,
-        0x10, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x1c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x22, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    };
-
-    const uint8_t indirect_syms[16] = {
-        0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
-        0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
-    };
-
-    const uint8_t strtab_bytes[56] = {
-        0x20, 0x00, 0x5f, 0x5f, 0x6d, 0x68, 0x5f, 0x65,
-        0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x68,
-        0x65, 0x61, 0x64, 0x65, 0x72, 0x00, 0x5f, 0x6d,
-        0x61, 0x69, 0x6e, 0x00, 0x5f, 0x65, 0x78, 0x69,
-        0x74, 0x00, 0x5f, 0x77, 0x72, 0x69, 0x74, 0x65,
-        0x00, 0x6d, 0x73, 0x67, 0x00, 0x6d, 0x73, 0x67,
-        0x5f, 0x6c, 0x65, 0x6e, 0x00, 0x00, 0x00, 0x00,
-    };
-
-    const uint8_t code_signature[408] = {
-        0xfa, 0xde, 0x0c, 0xc0, 0x00, 0x00, 0x01, 0x93, 0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0xfa, 0xde, 0x0c, 0x02,
-        0x00, 0x00, 0x01, 0x7f, 0x00, 0x02, 0x04, 0x00, 0x00, 0x02, 0x00, 0x02,
-        0x00, 0x00, 0x00, 0x5f, 0x00, 0x00, 0x00, 0x58, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x81, 0x50, 0x20, 0x02, 0x00, 0x0c,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
-        0x74, 0x65, 0x73, 0x74, 0x2e, 0x78, 0x00, 0xdd, 0x39, 0x08, 0x6c, 0xcb,
-        0x43, 0x60, 0x1a, 0x8f, 0xea, 0x32, 0xac, 0x8b, 0x15, 0x14, 0x2c, 0x9c,
-        0xaf, 0x96, 0xcd, 0x38, 0x0b, 0xb4, 0xc6, 0x37, 0x8a, 0x98, 0x25, 0x96,
-        0xc5, 0x4e, 0xd9, 0xad, 0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66,
-        0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c,
-        0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0xad,
-        0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1,
-        0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85,
-        0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0xad, 0x7f, 0xac, 0xb2, 0x58,
-        0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f,
-        0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48,
-        0x89, 0x2c, 0xa7, 0x61, 0x52, 0xb4, 0x7e, 0x6a, 0xd4, 0x8a, 0xca, 0x04,
-        0x8c, 0x42, 0xa4, 0x82, 0x00, 0x69, 0x7c, 0xbf, 0xa0, 0x6c, 0x8a, 0x79,
-        0xca, 0x11, 0x6c, 0x5c, 0xee, 0x4b, 0x34, 0x82, 0x79, 0x16, 0xa8, 0xad,
-        0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1,
-        0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85,
-        0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0xad, 0x7f, 0xac, 0xb2, 0x58,
-        0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f,
-        0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48,
-        0x89, 0x2c, 0xa7, 0xad, 0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66,
-        0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c,
-        0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0x83,
-        0x1e, 0x18, 0xcb, 0xa1, 0x22, 0x48, 0x72, 0xdd, 0x12, 0xd4, 0xfc, 0x7b,
-        0x94, 0x5b, 0x18, 0x94, 0x31, 0xbb, 0x64, 0x64, 0x4f, 0x35, 0x6f, 0x77,
-        0xe6, 0x5b, 0x5e, 0x4f, 0x60, 0x7a, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
-    };
-
-    vec_append_blob(data, chained_fixups, sizeof(chained_fixups));
-    vec_append_blob(data, exports_trie, sizeof(exports_trie));
-    vec_append_blob(data, function_starts, sizeof(function_starts));
-    vec_append_blob(data, symtab_bytes, sizeof(symtab_bytes));
-    vec_append_blob(data, indirect_syms, sizeof(indirect_syms));
-    vec_append_blob(data, strtab_bytes, sizeof(strtab_bytes));
-
-    // 8-byte hole between string table and code signature.
-    if (data.size() < 33104) vec_append_zeros(data, 33104 - data.size());
-    REQUIRE(data.size() == 33104);
-    vec_append_blob(data, code_signature, sizeof(code_signature));
+    data.insert(data.end(), chained_fixups.begin(), chained_fixups.end());
+    data.insert(data.end(), exports_trie.begin(), exports_trie.end());
+    data.insert(data.end(), function_starts.begin(), function_starts.end());
+    data.insert(data.end(), symtab.begin(), symtab.end());
+    data.insert(data.end(), indirect_syms.begin(), indirect_syms.end());
+    data.insert(data.end(), strtab.begin(), strtab.end());
+    append_padding_to(data, 33104);
+    data.insert(data.end(), codesig.begin(), codesig.end());
 
     REQUIRE(data.size() == 33512);
 
     std::cout << "Saving to `test2.x`." << std::endl;
     write_file("test2.x", data);
-
     std::cout << "Done." << std::endl;
 }
