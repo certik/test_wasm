@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
+#include <iomanip>
 
 #include "macho_utils.h"
 
@@ -78,6 +79,38 @@ void print_bytes(uint8_t *data, size_t size) {
         std::cout << " " << std::hex << (uint64_t)data[i] << std::dec;
     }
     std::cout << std::endl;
+}
+
+std::string ascii_or_empty(const char *s, size_t n) {
+    size_t len = 0;
+    while (len < n && s[len] != '\0') len++;
+    return std::string(s, len);
+}
+
+void print_data_range(const std::vector<uint8_t> &data, size_t offset,
+        size_t size, const std::string &indent) {
+    std::cout << indent << "RAW [" << offset << ", " << (offset + size)
+        << ") size=" << size << std::endl;
+    ASSERT(offset <= data.size());
+    ASSERT(size <= data.size() - offset);
+    for (size_t i=0; i < size; i++) {
+        if (i % 16 == 0) {
+            std::cout << indent << "  +" << std::setw(6) << std::setfill('0')
+                << std::hex << i << std::dec << std::setfill(' ') << ":";
+        }
+        std::cout << " " << std::setw(2) << std::setfill('0') << std::hex
+            << (uint64_t)data[offset + i] << std::dec << std::setfill(' ');
+        if ((i % 16) == 15 || i + 1 == size) {
+            std::cout << std::endl;
+        }
+    }
+}
+
+void maybe_print_data_range(bool raw, const std::vector<uint8_t> &data,
+        size_t offset, size_t size, const std::string &indent) {
+    if (raw) {
+        print_data_range(data, offset, size, indent);
+    }
 }
 
 std::string version_to_str(uint32_t version) {
@@ -657,9 +690,29 @@ void decode_instructions(uint32_t *data, size_t n, uint64_t addr) {
     }
 }
 
-int main() {
+struct nlist_64_local {
+    uint32_t n_strx;
+    uint8_t n_type;
+    uint8_t n_sect;
+    uint16_t n_desc;
+    uint64_t n_value;
+};
+
+int main(int argc, char **argv) {
+    bool raw_dump = false;
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--raw") {
+            raw_dump = true;
+        } else {
+            std::cerr << "Usage: " << argv[0] << " [--raw]" << std::endl;
+            return 1;
+        }
+    }
+
     std::vector<uint8_t> data;
     read_file("test.x", data);
+    ASSERT(data.size() >= sizeof(mach_header_64))
     std::cout << "File size: " << data.size() << std::endl;
     mach_header_64 *pheader = (mach_header_64*)(&data[0]);
     ASSERT(pheader->magic == MH_MAGIC_64)
@@ -673,23 +726,30 @@ int main() {
     std::cout << "    sizeofcmds: " << pheader->sizeofcmds << std::endl;
     std::cout << "    flags: " << pheader->flags << std::endl;
     std::cout << "    reserved: " << pheader->reserved << std::endl;
+    maybe_print_data_range(raw_dump, data, 0, sizeof(mach_header_64), "    ");
     size_t idx = sizeof(mach_header_64);
     for (size_t ncmd=0; ncmd < pheader->ncmds; ncmd++) {
+        ASSERT(idx + sizeof(load_command) <= data.size())
+        load_command *pcmd = (load_command*)(&data[idx]);
+        ASSERT(pcmd->cmdsize >= sizeof(load_command))
+        ASSERT(idx + pcmd->cmdsize <= data.size())
+
         std::cout << "Load command " << std::setfill(' ')
             << std::setw(2) << ncmd << " ";
-        load_command *pcmd = (load_command*)(&data[idx]);
+        std::cout << "(offset=" << idx << ") ";
         if (pcmd->cmd == LC_UUID) {
             std::cout << "LC_UUID" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(uuid_command) << std::endl;
             uuid_command *p = (uuid_command*)(&data[idx]);
             std::cout << "    UUID: " << uuid_to_str(p->uuid) << std::endl;
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
         } else if (pcmd->cmd == LC_SEGMENT_64) {
             std::cout << "LC_SEGMENT_64" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             segment_command_64 *p = (segment_command_64*)(&data[idx]);
             std::cout << "    expect : " << sizeof(segment_command_64) + p->nsects*sizeof(section_64) << std::endl;
-            std::cout << "    segname: " << p->segname << std::endl;
+            std::cout << "    segname: " << ascii_or_empty(p->segname, sizeof(p->segname)) << std::endl;
             std::cout << "    vmaddr: 0x" << std::hex << p->vmaddr << std::dec << std::endl;
             std::cout << "    vmsize: 0x" << std::hex << p->vmsize << std::dec << std::endl;
             std::cout << "    fileoff: " << p->fileoff << std::endl;
@@ -698,12 +758,20 @@ int main() {
             std::cout << "    initprot: " << perm2str(p->initprot) << " (" << p->initprot << ")" << std::endl;
             std::cout << "    nsects: " << p->nsects << std::endl;
             std::cout << "    flags: " << p->flags << std::endl;
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
+            if (p->filesize > 0) {
+                ASSERT(p->fileoff <= data.size())
+                ASSERT(p->filesize <= data.size() - p->fileoff)
+                maybe_print_data_range(raw_dump, data, p->fileoff, p->filesize, "    ");
+            }
             for (size_t nsection=0; nsection < p->nsects; nsection++) {
                 size_t section_idx = idx + sizeof(segment_command_64) + nsection*sizeof(section_64);
                 section_64 *s = (section_64*)(&data[section_idx]);
                 std::cout << "    Section " << nsection << std::endl;
-                std::cout << "        sectname: " << s->sectname << std::endl;
-                std::cout << "        segname: " << s->segname << std::endl;
+                std::string sectname = ascii_or_empty(s->sectname, sizeof(s->sectname));
+                std::string segname = ascii_or_empty(s->segname, sizeof(s->segname));
+                std::cout << "        sectname: " << sectname << std::endl;
+                std::cout << "        segname: " << segname << std::endl;
                 std::cout << "        addr: 0x" << std::hex << s->addr << std::dec << std::endl;
                 std::cout << "        size: 0x" << std::hex << s->size << std::dec << std::endl;
                 std::cout << "        offset: " << s->offset << std::endl;
@@ -713,15 +781,28 @@ int main() {
                 std::cout << "        flags: " << s->flags << std::endl;
                 std::cout << "        reserved1: " << s->reserved1 << std::endl;
                 std::cout << "        reserved2: " << s->reserved2 << std::endl;
+                uint32_t section_type = s->flags & 0xFF;
+                bool is_zerofill = section_type == 0x1;
+                if (is_zerofill) {
+                    std::cout << "        DATA: zerofill section (not stored in file)" << std::endl;
+                } else if (s->size > 0) {
+                    ASSERT(s->offset <= data.size())
+                    ASSERT(s->size <= data.size() - s->offset)
+                    maybe_print_data_range(raw_dump, data, s->offset, s->size, "        ");
+                }
 
-                std::cout << "        ";
-                print_bytes(&data[s->offset], s->size);
+                if (s->nreloc > 0) {
+                    size_t reloc_size = s->nreloc * 8;
+                    ASSERT(s->reloff <= data.size())
+                    ASSERT(reloc_size <= data.size() - s->reloff)
+                    maybe_print_data_range(raw_dump, data, s->reloff, reloc_size, "        ");
+                }
 
-                if (std::string(s->sectname) == "__cstring") {
+                if (sectname == "__cstring" && !is_zerofill) {
                     std::cout << "        C string: \""
                         << std::string((char*)&data[s->offset], s->size)
                         << "\"" << std::endl;
-                } else if (std::string(s->sectname) == "__text") {
+                } else if (sectname == "__text" && !is_zerofill) {
                     uint64_t n = s->size/4;
                     ASSERT(n*4 == s->size)
                     decode_instructions((uint32_t*)&data[s->offset], n,
@@ -737,23 +818,70 @@ int main() {
             std::cout << "    symoff: " << p->symoff <<std::endl;
             std::cout << "    stroff: " << p->stroff <<std::endl;
             std::cout << "    strsize: " << p->strsize <<std::endl;
-            std::cout << "    stroff/strsize as string: "
-                << std::string((char*)&data[p->stroff], p->strsize) << std::endl;;
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
+            ASSERT(p->stroff <= data.size())
+            ASSERT(p->strsize <= data.size() - p->stroff)
+            maybe_print_data_range(raw_dump, data, p->stroff, p->strsize, "    ");
+            size_t symtab_size = p->nsyms * sizeof(nlist_64_local);
+            ASSERT(p->symoff <= data.size())
+            ASSERT(symtab_size <= data.size() - p->symoff)
+            maybe_print_data_range(raw_dump, data, p->symoff, symtab_size, "    ");
+            nlist_64_local *syms = (nlist_64_local*)(&data[p->symoff]);
+            for (size_t i=0; i < p->nsyms; i++) {
+                nlist_64_local *sym = &syms[i];
+                std::string name = "<bad n_strx>";
+                if (sym->n_strx < p->strsize) {
+                    const char *name_ptr = (const char*)&data[p->stroff + sym->n_strx];
+                    size_t max_len = p->strsize - sym->n_strx;
+                    name = ascii_or_empty(name_ptr, max_len);
+                }
+                std::cout << "    Symbol " << i << std::endl;
+                std::cout << "        n_strx : " << sym->n_strx << std::endl;
+                std::cout << "        n_type : 0x" << std::hex << (uint32_t)sym->n_type << std::dec << std::endl;
+                std::cout << "        n_sect : " << (uint32_t)sym->n_sect << std::endl;
+                std::cout << "        n_desc : 0x" << std::hex << sym->n_desc << std::dec << std::endl;
+                std::cout << "        n_value: 0x" << std::hex << sym->n_value << std::dec << std::endl;
+                std::cout << "        name   : " << name << std::endl;
+            }
         } else if (pcmd->cmd == LC_DYSYMTAB) {
             std::cout << "LC_DYSYMTAB" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(dysymtab_command) << std::endl;
             dysymtab_command *p = (dysymtab_command*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    Number of local symbols: " << p->nlocalsym <<std::endl;
+            std::cout << "    Number of external defined symbols: " << p->nextdefsym <<std::endl;
+            std::cout << "    Number of undefined symbols: " << p->nundefsym <<std::endl;
+            if (p->indirectsymoff != 0 && p->nindirectsyms != 0) {
+                size_t nbytes = p->nindirectsyms * sizeof(uint32_t);
+                ASSERT(p->indirectsymoff <= data.size())
+                ASSERT(nbytes <= data.size() - p->indirectsymoff)
+                maybe_print_data_range(raw_dump, data, p->indirectsymoff, nbytes, "    ");
+            }
+            if (p->extreloff != 0 && p->nextrel != 0) {
+                size_t nbytes = p->nextrel * 8;
+                ASSERT(p->extreloff <= data.size())
+                ASSERT(nbytes <= data.size() - p->extreloff)
+                maybe_print_data_range(raw_dump, data, p->extreloff, nbytes, "    ");
+            }
+            if (p->locreloff != 0 && p->nlocrel != 0) {
+                size_t nbytes = p->nlocrel * 8;
+                ASSERT(p->locreloff <= data.size())
+                ASSERT(nbytes <= data.size() - p->locreloff)
+                maybe_print_data_range(raw_dump, data, p->locreloff, nbytes, "    ");
+            }
         } else if (pcmd->cmd == LC_LOAD_DYLIB) {
             std::cout << "LC_LOAD_DYLIB" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
-            // TODO: cmdsize = 56, expect = 24; We have 32 unaccounted bytes
             std::cout << "    expect : " << sizeof(dylib_command) << std::endl;
             dylib_command *p = (dylib_command*)(&data[idx]);
             size_t str_idx = idx+p->dylib.name.offset;
             std::string str = (char *)(&data[str_idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    Dylib name: " << str <<std::endl;
+            std::cout << "    timestamp: " << p->dylib.timestamp <<std::endl;
+            std::cout << "    current_version: " << version_to_str(p->dylib.current_version) <<std::endl;
+            std::cout << "    compatibility_version: " << version_to_str(p->dylib.compatibility_version) <<std::endl;
         } else if (pcmd->cmd == LC_LOAD_DYLINKER) {
             std::cout << "LC_LOAD_DYLINKER" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
@@ -761,8 +889,7 @@ int main() {
             dylinker_command *p = (dylinker_command*)(&data[idx]);
             size_t str_idx = idx+p->name.offset;
             std::string str = (char *)(&data[str_idx]);
-            // Note: It looks like the offset is right behind this header, and length
-            // is 20 bytes, explaining the difference between `cmdsize` and `expect`
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    name offset: " << std::to_string(p->name.offset) << std::endl;
             std::cout << "    name: " << str <<std::endl;
         } else if (pcmd->cmd == LC_CODE_SIGNATURE) {
@@ -770,42 +897,68 @@ int main() {
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    dataoff : " << std::to_string(p->offset) << std::endl;
             std::cout << "    datasize: " << std::to_string(p->len) << std::endl;
+            if (p->len > 0) {
+                ASSERT(p->offset <= data.size())
+                ASSERT(p->len <= data.size() - p->offset)
+                maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+            }
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
             std::cout << "LC_FUNCTION_STARTS" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    dataoff : " << std::to_string(p->offset) << std::endl;
             std::cout << "    datasize: " << std::to_string(p->len) << std::endl;
+            if (p->len > 0) {
+                ASSERT(p->offset <= data.size())
+                ASSERT(p->len <= data.size() - p->offset)
+                maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+            }
         } else if (pcmd->cmd == LC_DATA_IN_CODE) {
             std::cout << "LC_DATA_IN_CODE" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    dataoff : " << std::to_string(p->offset) << std::endl;
             std::cout << "    datasize: " << std::to_string(p->len) << std::endl;
+            if (p->len > 0) {
+                ASSERT(p->offset <= data.size())
+                ASSERT(p->len <= data.size() - p->offset)
+                maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+            }
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
             std::cout << "LC_SOURCE_VERSION" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(source_version_command) << std::endl;
             source_version_command *p = (source_version_command*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    version : " << std::to_string(p->version) << std::endl;
         } else if (pcmd->cmd == LC_BUILD_VERSION) {
             std::cout << "LC_BUILD_VERSION" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(build_version_command) << std::endl;
             build_version_command *p = (build_version_command*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    platform: " << std::to_string(p->platform) << std::endl;
             std::cout << "    minos   : " << version_to_str(p->minos) << std::endl;
             std::cout << "    sdk   : " << version_to_str(p->sdk) << std::endl;
             std::cout << "    ntools   : " << std::to_string(p->ntools) << std::endl;
+            size_t trailer = pcmd->cmdsize - sizeof(build_version_command);
+            if (trailer > 0) {
+                // build_tool_version array
+                maybe_print_data_range(raw_dump, data, idx + sizeof(build_version_command), trailer, "    ");
+            }
         } else if (pcmd->cmd == LC_MAIN) {
             std::cout << "LC_MAIN" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(entry_point_command) << std::endl;
             entry_point_command *p = (entry_point_command*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    entryoff : " << std::to_string(p->entryoff) << std::endl;
             std::cout << "    stacksize: " << std::to_string(p->stacksize) << std::endl;
         } else if (pcmd->cmd == LC_DYLD_EXPORTS_TRIE) {
@@ -813,20 +966,32 @@ int main() {
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    offset: " << p->offset <<std::endl;
             std::cout << "    len: " << p->len <<std::endl;
+            if (p->len > 0) {
+                ASSERT(p->offset <= data.size())
+                ASSERT(p->len <= data.size() - p->offset)
+                maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+            }
         } else if (pcmd->cmd == LC_DYLD_CHAINED_FIXUPS) {
             std::cout << "LC_DYLD_CHAINED_FIXUPS" << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
             std::cout << "    expect : " << sizeof(section_offset_len) << std::endl;
             section_offset_len *p = (section_offset_len*)(&data[idx]);
-            //print_bytes(&data[idx], pcmd->cmdsize);
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
             std::cout << "    offset: " << p->offset <<std::endl;
             std::cout << "    len: " << p->len <<std::endl;
+            if (p->len > 0) {
+                ASSERT(p->offset <= data.size())
+                ASSERT(p->len <= data.size() - p->offset)
+                maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+            }
         } else {
             std::cout << "UNKNOWN" << std::endl;
             std::cout << "    type: " << pcmd->cmd << std::endl;
             std::cout << "    cmdsize: " << pcmd->cmdsize << std::endl;
+            maybe_print_data_range(raw_dump, data, idx, pcmd->cmdsize, "    ");
         }
 
         idx += pcmd->cmdsize;
