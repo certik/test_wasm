@@ -702,6 +702,14 @@ uint32_t read_u32(const std::vector<uint8_t> &data, size_t offset) {
         | ((uint32_t)data[offset + 3] << 24);
 }
 
+uint32_t read_be_u32(const std::vector<uint8_t> &data, size_t offset) {
+    ASSERT(offset + 4 <= data.size())
+    return ((uint32_t)data[offset] << 24)
+        | ((uint32_t)data[offset + 1] << 16)
+        | ((uint32_t)data[offset + 2] << 8)
+        | (uint32_t)data[offset + 3];
+}
+
 uint64_t read_u64(const std::vector<uint8_t> &data, size_t offset) {
     ASSERT(offset + 8 <= data.size())
     return (uint64_t)data[offset]
@@ -815,6 +823,144 @@ void decode_literal_words(const std::vector<uint8_t> &data, uint32_t offset,
             std::cout << "            [" << i << "] addr=0x" << std::hex
                 << (addr + i * width) << " value=0x" << value << std::dec
                 << std::endl;
+        }
+    }
+}
+
+std::string cs_magic_to_str(uint32_t magic) {
+    if (magic == 0xfade0cc0) return "CSMAGIC_EMBEDDED_SIGNATURE";
+    if (magic == 0xfade0c02) return "CSMAGIC_CODEDIRECTORY";
+    if (magic == 0xfade0c01) return "CSMAGIC_REQUIREMENTS";
+    if (magic == 0xfade7171) return "CSMAGIC_BLOBWRAPPER";
+    if (magic == 0xfade0b01) return "CSMAGIC_EMBEDDED_ENTITLEMENTS";
+    return "UNKNOWN";
+}
+
+std::string cs_slot_to_str(uint32_t slot_type) {
+    if (slot_type == 0) return "CSSLOT_CODEDIRECTORY";
+    if (slot_type == 1) return "CSSLOT_INFOSLOT";
+    if (slot_type == 2) return "CSSLOT_REQUIREMENTS";
+    if (slot_type == 3) return "CSSLOT_RESOURCEDIR";
+    if (slot_type == 4) return "CSSLOT_APPLICATION";
+    if (slot_type == 5) return "CSSLOT_ENTITLEMENTS";
+    if (slot_type == 7) return "CSSLOT_DER_ENTITLEMENTS";
+    return "UNKNOWN_SLOT";
+}
+
+std::string dic_kind_to_str(uint16_t kind) {
+    if (kind == 1) return "DATA";
+    if (kind == 2) return "JUMP_TABLE8";
+    if (kind == 3) return "JUMP_TABLE16";
+    if (kind == 4) return "JUMP_TABLE32";
+    if (kind == 5) return "ABS_JUMP_TABLE32";
+    return "UNKNOWN";
+}
+
+void decode_code_directory_blob(const std::vector<uint8_t> &data, size_t off,
+        size_t limit, const std::string &indent) {
+    ASSERT(off + 44 <= limit)
+    uint32_t magic = read_be_u32(data, off + 0);
+    uint32_t length = read_be_u32(data, off + 4);
+    ASSERT(off + length <= limit)
+    uint32_t version = read_be_u32(data, off + 8);
+    uint32_t flags = read_be_u32(data, off + 12);
+    uint32_t hashOffset = read_be_u32(data, off + 16);
+    uint32_t identOffset = read_be_u32(data, off + 20);
+    uint32_t nSpecialSlots = read_be_u32(data, off + 24);
+    uint32_t nCodeSlots = read_be_u32(data, off + 28);
+    uint32_t codeLimit = read_be_u32(data, off + 32);
+    uint8_t hashSize = data[off + 36];
+    uint8_t hashType = data[off + 37];
+    uint8_t platform = data[off + 38];
+    uint8_t pageSize = data[off + 39];
+    uint32_t spare2 = read_be_u32(data, off + 40);
+
+    std::cout << indent << "magic      : 0x" << std::hex << magic
+        << std::dec << " (" << cs_magic_to_str(magic) << ")" << std::endl;
+    std::cout << indent << "length     : " << length << std::endl;
+    std::cout << indent << "version    : 0x" << std::hex << version
+        << std::dec << std::endl;
+    std::cout << indent << "flags      : 0x" << std::hex << flags
+        << std::dec << std::endl;
+    std::cout << indent << "hashOffset : " << hashOffset << std::endl;
+    std::cout << indent << "identOffset: " << identOffset << std::endl;
+    std::cout << indent << "nSpecialSlots: " << nSpecialSlots << std::endl;
+    std::cout << indent << "nCodeSlots   : " << nCodeSlots << std::endl;
+    std::cout << indent << "codeLimit    : " << codeLimit << std::endl;
+    std::cout << indent << "hashSize/hashType/platform/pageSize: "
+        << (uint32_t)hashSize << "/" << (uint32_t)hashType
+        << "/" << (uint32_t)platform << "/" << (uint32_t)pageSize
+        << std::endl;
+    std::cout << indent << "spare2      : " << spare2 << std::endl;
+
+    if (length >= 48) {
+        uint32_t scatterOffset = read_be_u32(data, off + 44);
+        std::cout << indent << "scatterOffset: " << scatterOffset << std::endl;
+    }
+    if (length >= 52) {
+        uint32_t teamOffset = read_be_u32(data, off + 48);
+        std::cout << indent << "teamOffset   : " << teamOffset << std::endl;
+    }
+
+    if (identOffset > 0 && identOffset < length) {
+        size_t ident_start = off + identOffset;
+        size_t ident_end = off + length;
+        size_t cur = ident_start;
+        while (cur < ident_end && data[cur] != '\0') cur++;
+        std::string ident((const char*)&data[ident_start], cur - ident_start);
+        std::cout << indent << "identifier: " << ident << std::endl;
+    }
+}
+
+void decode_code_signature(const std::vector<uint8_t> &data, uint32_t dataoff,
+        uint32_t datasize) {
+    std::cout << "    decoded code signature:" << std::endl;
+    if (datasize == 0) {
+        std::cout << "        (empty)" << std::endl;
+        return;
+    }
+    ASSERT(dataoff <= data.size())
+    ASSERT(datasize <= data.size() - dataoff)
+    size_t begin = dataoff;
+    size_t end = dataoff + datasize;
+    ASSERT(begin + 12 <= end)
+    uint32_t magic = read_be_u32(data, begin + 0);
+    uint32_t length = read_be_u32(data, begin + 4);
+    std::cout << "        superblob magic : 0x" << std::hex << magic << std::dec
+        << " (" << cs_magic_to_str(magic) << ")" << std::endl;
+    std::cout << "        superblob length: " << length << std::endl;
+    if (magic != 0xfade0cc0) {
+        std::cout << "        not an embedded signature superblob" << std::endl;
+        return;
+    }
+    uint32_t count = read_be_u32(data, begin + 8);
+    std::cout << "        blob count      : " << count << std::endl;
+    ASSERT(begin + 12 + (size_t)count * 8 <= end)
+    for (size_t i = 0; i < count; i++) {
+        size_t entry = begin + 12 + i * 8;
+        uint32_t slot_type = read_be_u32(data, entry + 0);
+        uint32_t slot_off = read_be_u32(data, entry + 4);
+        std::cout << "        blob[" << i << "] type=" << slot_type << " ("
+            << cs_slot_to_str(slot_type) << ")"
+            << " offset=" << slot_off << std::endl;
+        if (slot_off >= datasize) {
+            std::cout << "            invalid offset" << std::endl;
+            continue;
+        }
+        size_t blob = begin + slot_off;
+        ASSERT(blob + 8 <= end)
+        uint32_t blob_magic = read_be_u32(data, blob + 0);
+        uint32_t blob_length = read_be_u32(data, blob + 4);
+        std::cout << "            magic : 0x" << std::hex << blob_magic
+            << std::dec << " (" << cs_magic_to_str(blob_magic) << ")"
+            << std::endl;
+        std::cout << "            length: " << blob_length << std::endl;
+        if (blob + blob_length > end) {
+            std::cout << "            invalid blob length" << std::endl;
+            continue;
+        }
+        if (blob_magic == 0xfade0c02) {
+            decode_code_directory_blob(data, blob, end, "            ");
         }
     }
 }
@@ -1071,6 +1217,9 @@ int main(int argc, char **argv) {
                 ASSERT(p->offset <= data.size())
                 ASSERT(p->len <= data.size() - p->offset)
                 maybe_print_data_range(raw_dump, data, p->offset, p->len, "    ");
+                decode_code_signature(data, p->offset, p->len);
+            } else {
+                std::cout << "    decoded code signature: (empty)" << std::endl;
             }
         } else if (pcmd->cmd == LC_FUNCTION_STARTS) {
             std::cout << "LC_FUNCTION_STARTS" << std::endl;
@@ -1136,6 +1285,8 @@ int main(int argc, char **argv) {
                         std::cout << std::endl;
                     }
                 }
+            } else {
+                std::cout << "    decoded data-in-code entries: none" << std::endl;
             }
         } else if (pcmd->cmd == LC_SOURCE_VERSION) {
             std::cout << "LC_SOURCE_VERSION" << std::endl;
