@@ -20,7 +20,7 @@
     } while (0)
 
 static const std::string kMessage =
-    "hello from libSystem Write(), now with a much longer message from write_macho.cpp!\n";
+    "hello from libSystem Write(), now with a much longer message from write_macho.cpp!\nSecond line.\n";
 
 static void vec_append(std::vector<uint8_t> &data, const void *item, size_t size) {
     const uint8_t *p = (const uint8_t *)item;
