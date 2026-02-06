@@ -9,3 +9,5 @@ ld exit.o -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib/ -lSyste
 #clang g.c -o test.x
 clang++ -g -W -Wall -Werror parse_macho.cpp -o parse_macho && ./parse_macho
 clang++ -g -W -Wall -Werror write_macho.cpp -o write_macho && ./write_macho
+chmod +x test2.x
+./test2.x
