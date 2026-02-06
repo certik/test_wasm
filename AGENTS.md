@@ -74,7 +74,7 @@ clang++ -std=c++17 -Wall -Wextra wasm_to_wat.cpp -o wasm_to_wat
 ```
 
 ### 5) Mach-O flow (`build.sh`)
-`build.sh` currently fails under `-Werror` on modern macOS SDKs because of deprecated `sprintf` usage in `macho_utils.h`.
+`build.sh` is expected to pass under `-Werror` on modern macOS SDKs.
 
 ## Editing Rules
 - Treat this as an experimentation repo: keep behavior-preserving unless explicitly asked to redesign.
@@ -96,4 +96,4 @@ When changing WASM generation/parsing logic, run at least:
 
 When changing Mach-O logic, run:
 1. `./build.sh` (or equivalent individual compile commands)
-2. If `-Werror` fails due known warnings/deprecations, report exact diagnostics instead of masking them.
+2. If `-Werror` fails, report exact diagnostics instead of masking them.

@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <fstream>
 #include <vector>
 
@@ -201,7 +202,7 @@ void write_file(const std::string &filename, const std::vector<uint8_t> &data)
 // Convert 16 byte UUID to a string
 std::string uuid_to_str(uint8_t uuid[16]) {
     char str[37] = {};
-    sprintf(str,
+    snprintf(str, sizeof(str),
     "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
         uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
         uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14],
