@@ -19,6 +19,9 @@
         } \
     } while (0)
 
+static const std::string kMessage =
+    "hello from libSystem Write(), now with a much longer message from write_macho.cpp!\n";
+
 static void vec_append(std::vector<uint8_t> &data, const void *item, size_t size) {
     const uint8_t *p = (const uint8_t *)item;
     data.insert(data.end(), p, p + size);
@@ -72,11 +75,13 @@ static void append_padding_to(std::vector<uint8_t> &out, size_t target_size) {
     out.insert(out.end(), target_size - out.size(), 0);
 }
 
-static std::vector<uint8_t> build_text_bytes() {
+static std::vector<uint8_t> build_text_bytes(uint16_t msg_len) {
     // _main in exit.asm:
     //   mov x0,#1 ; adrp/add for msg ; mov x2,#msg_len ; bl _write ; mov x0,#42 ; bl _exit
+    REQUIRE(msg_len <= 0xffff);
+    const uint32_t mov_x2_imm = 0xd2800000U | ((uint32_t)msg_len << 5) | 2U;
     const uint32_t instrs[] = {
-        0xd2800020, 0x90000001, 0x91111021, 0xd28003a2,
+        0xd2800020, 0x90000001, 0x91111021, mov_x2_imm,
         0x94000006, 0xd2800540, 0x94000001,
     };
     std::vector<uint8_t> out;
@@ -98,9 +103,7 @@ static std::vector<uint8_t> build_stub_bytes() {
 
 static std::vector<uint8_t> build_cstring_bytes() {
     std::vector<uint8_t> out;
-    append_cstr(out, "hello from libSystem write()\n");
-    append_cstr(out, "hello from libSystem write()\n");
-    REQUIRE(out.size() == 60);
+    append_cstr(out, kMessage);
     return out;
 }
 
@@ -209,7 +212,8 @@ struct SymbolDef {
 
 static void build_symbol_and_string_tables(std::vector<uint8_t> &symtab,
         std::vector<uint8_t> &indirect_syms,
-        std::vector<uint8_t> &strtab) {
+        std::vector<uint8_t> &strtab,
+        uint64_t msg_len) {
     const std::vector<std::string> name_pool = {
         "__mh_execute_header", "_main", "_exit", "_write", "msg", "msg_len"
     };
@@ -227,7 +231,7 @@ static void build_symbol_and_string_tables(std::vector<uint8_t> &symtab,
 
     const std::vector<SymbolDef> symbols = {
         {"msg",                 0x0e, 3, 0x0000, 0x100000444ULL},
-        {"msg_len",             0x02, 0, 0x0000, 0x000000001dULL},
+        {"msg_len",             0x02, 0, 0x0000, msg_len},
         {"__mh_execute_header", 0x0f, 1, 0x0010, 0x100000000ULL},
         {"_main",               0x0f, 1, 0x0000, 0x100000410ULL},
         {"_exit",               0x01, 0, 0x0100, 0x0ULL},
@@ -334,6 +338,8 @@ int main() {
 
     std::vector<uint8_t> data;
     data.reserve(33512);
+    const std::vector<uint8_t> cstr = build_cstring_bytes();
+    const uint16_t msg_len = (uint16_t)kMessage.size();
 
     {
         mach_header_64 header = {
@@ -416,7 +422,7 @@ int main() {
             .sectname = "__cstring",
             .segname = "__TEXT",
             .addr = 0x100000444ULL,
-            .size = 0x3c,
+            .size = (uint64_t)cstr.size(),
             .offset = 1092,
             .align = 0,
             .reloff = 0,
@@ -581,7 +587,7 @@ int main() {
     REQUIRE(data.size() == 1008);
 
     append_padding_to(data, 1040);
-    std::vector<uint8_t> text = build_text_bytes();
+    std::vector<uint8_t> text = build_text_bytes(msg_len);
     data.insert(data.end(), text.begin(), text.end());
 
     REQUIRE(data.size() == 1068);
@@ -589,7 +595,6 @@ int main() {
     data.insert(data.end(), stubs.begin(), stubs.end());
 
     REQUIRE(data.size() == 1092);
-    std::vector<uint8_t> cstr = build_cstring_bytes();
     data.insert(data.end(), cstr.begin(), cstr.end());
 
     append_padding_to(data, 16384);
@@ -604,7 +609,7 @@ int main() {
     std::vector<uint8_t> symtab;
     std::vector<uint8_t> indirect_syms;
     std::vector<uint8_t> strtab;
-    build_symbol_and_string_tables(symtab, indirect_syms, strtab);
+    build_symbol_and_string_tables(symtab, indirect_syms, strtab, msg_len);
 
     data.insert(data.end(), chained_fixups.begin(), chained_fixups.end());
     data.insert(data.end(), exports_trie.begin(), exports_trie.end());
