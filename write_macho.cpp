@@ -3,8 +3,11 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <array>
 #include <unordered_map>
 #include <vector>
+
+#include <CommonCrypto/CommonDigest.h>
 
 #include "macho_utils.h"
 
@@ -67,23 +70,6 @@ static void append_cstr(std::vector<uint8_t> &out, const std::string &s) {
 static void append_padding_to(std::vector<uint8_t> &out, size_t target_size) {
     REQUIRE(out.size() <= target_size);
     out.insert(out.end(), target_size - out.size(), 0);
-}
-
-static std::vector<uint8_t> hex_to_bytes(const std::string &hex) {
-    REQUIRE((hex.size() % 2) == 0);
-    std::vector<uint8_t> out;
-    out.reserve(hex.size() / 2);
-    auto nib = [](char c) -> uint8_t {
-        if (c >= '0' && c <= '9') return (uint8_t)(c - '0');
-        if (c >= 'a' && c <= 'f') return (uint8_t)(10 + c - 'a');
-        if (c >= 'A' && c <= 'F') return (uint8_t)(10 + c - 'A');
-        REQUIRE(false);
-        return 0;
-    };
-    for (size_t i = 0; i < hex.size(); i += 2) {
-        out.push_back((uint8_t)((nib(hex[i]) << 4) | nib(hex[i + 1])));
-    }
-    return out;
 }
 
 static std::vector<uint8_t> build_text_bytes() {
@@ -275,63 +261,68 @@ static std::vector<uint8_t> build_function_starts_blob() {
     return out;
 }
 
-static std::vector<uint8_t> build_code_signature_blob() {
-    // Build CodeDirectory + SuperBlob from structured fields.
-    const std::vector<std::string> page_hashes = {
-        "dd39086ccb43601a8fea32ac8b15142c9caf96cd380bb4c6378a982596c54ed9",
-        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
-        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
-        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
-        "6152b47e6ad48aca048c42a48200697cbfa06c8a79ca116c5cee4b34827916a8",
-        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
-        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
-        "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7",
-        "831e18cba1224872dd12d4fc7b945b189431bb64644f356f77e65b5e4f607a02",
-    };
+static std::vector<uint8_t> build_code_signature_blob(
+        const std::vector<uint8_t> &image, uint32_t code_limit) {
+    REQUIRE(code_limit <= image.size());
+    const uint32_t page_size = 4096;
+    const uint32_t page_shift = 12;
+    const std::string ident = "test.x";
+    const uint32_t n_code_slots = (code_limit + page_size - 1) / page_size;
+    const uint32_t ident_offset = 88;
+    const uint32_t hash_offset = ident_offset + (uint32_t)ident.size() + 1;
+    const uint32_t cd_len = hash_offset + n_code_slots * CC_SHA256_DIGEST_LENGTH;
+
+    std::vector<std::array<uint8_t, CC_SHA256_DIGEST_LENGTH>> page_hashes;
+    page_hashes.reserve(n_code_slots);
+    for (uint32_t i = 0; i < n_code_slots; i++) {
+        const uint32_t start = i * page_size;
+        const uint32_t remain = code_limit - start;
+        const uint32_t len = remain < page_size ? remain : page_size;
+        std::array<uint8_t, CC_SHA256_DIGEST_LENGTH> digest = {};
+        CC_SHA256(&image[start], len, digest.data());
+        page_hashes.push_back(digest);
+    }
 
     std::vector<uint8_t> cd;
     append_be32(cd, 0xfade0c02); // CSMAGIC_CODEDIRECTORY
-    append_be32(cd, 383);        // length
+    append_be32(cd, cd_len);     // length
     append_be32(cd, 0x00020400); // version
     append_be32(cd, 0x00020002); // flags
-    append_be32(cd, 95);         // hashOffset
-    append_be32(cd, 88);         // identOffset
+    append_be32(cd, hash_offset); // hashOffset
+    append_be32(cd, ident_offset); // identOffset
     append_be32(cd, 0);          // nSpecialSlots
-    append_be32(cd, 9);          // nCodeSlots
-    append_be32(cd, 33104);      // codeLimit
+    append_be32(cd, n_code_slots); // nCodeSlots
+    append_be32(cd, code_limit); // codeLimit
     append_u8(cd, 32);           // hashSize
     append_u8(cd, 2);            // hashType (SHA-256)
     append_u8(cd, 0);            // platform
-    append_u8(cd, 12);           // pageSize (2^12)
+    append_u8(cd, page_shift);   // pageSize (2^12)
     append_be32(cd, 0);          // spare2
     append_be32(cd, 0);          // scatterOffset
     append_be32(cd, 0);          // teamOffset
 
-    // Reserved/extended CodeDirectory fields before identifier.
     append_padding_to(cd, 76);
     append_be32(cd, 0x1c);
     append_be32(cd, 0x0);
     append_be32(cd, 0x1);
-    REQUIRE(cd.size() == 88);
+    REQUIRE(cd.size() == ident_offset);
 
-    append_cstr(cd, "test.x");
-    REQUIRE(cd.size() == 95);
+    append_cstr(cd, ident);
+    REQUIRE(cd.size() == hash_offset);
 
     for (const auto &h : page_hashes) {
-        std::vector<uint8_t> bytes = hex_to_bytes(h);
-        REQUIRE(bytes.size() == 32);
-        cd.insert(cd.end(), bytes.begin(), bytes.end());
+        cd.insert(cd.end(), h.begin(), h.end());
     }
-    REQUIRE(cd.size() == 383);
+    REQUIRE(cd.size() == cd_len);
 
     std::vector<uint8_t> superblob;
     append_be32(superblob, 0xfade0cc0); // CSMAGIC_EMBEDDED_SIGNATURE
-    append_be32(superblob, 403);        // length
+    append_be32(superblob, 20 + cd_len); // length
     append_be32(superblob, 1);          // count
     append_be32(superblob, 0);          // CSSLOT_CODEDIRECTORY
     append_be32(superblob, 20);         // offset of CodeDirectory
     superblob.insert(superblob.end(), cd.begin(), cd.end());
-    REQUIRE(superblob.size() == 403);
+    REQUIRE(superblob.size() == 20 + cd_len);
 
     append_padding_to(superblob, 408); // LC_CODE_SIGNATURE datasize
     REQUIRE(superblob.size() == 408);
@@ -614,7 +605,6 @@ int main() {
     std::vector<uint8_t> indirect_syms;
     std::vector<uint8_t> strtab;
     build_symbol_and_string_tables(symtab, indirect_syms, strtab);
-    std::vector<uint8_t> codesig = build_code_signature_blob();
 
     data.insert(data.end(), chained_fixups.begin(), chained_fixups.end());
     data.insert(data.end(), exports_trie.begin(), exports_trie.end());
@@ -623,6 +613,8 @@ int main() {
     data.insert(data.end(), indirect_syms.begin(), indirect_syms.end());
     data.insert(data.end(), strtab.begin(), strtab.end());
     append_padding_to(data, 33104);
+
+    std::vector<uint8_t> codesig = build_code_signature_blob(data, 33104);
     data.insert(data.end(), codesig.begin(), codesig.end());
 
     REQUIRE(data.size() == 33512);
