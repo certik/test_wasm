@@ -1,52 +1,60 @@
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <vector>
 
 #include "macho_utils.h"
 
-void vec_append(std::vector<uint8_t> &data, uint8_t *item, size_t item_size) {
-    for (size_t i=0; i < item_size; i++) {
-        data.push_back(item[i]);
-    }
+#define REQUIRE(cond) \
+    do { \
+        if (!(cond)) { \
+            std::cerr << "REQUIRE failed at line " << __LINE__ << ": " #cond "\n"; \
+            std::abort(); \
+        } \
+    } while (0)
+
+static void vec_append(std::vector<uint8_t> &data, const void *item, size_t item_size) {
+    const uint8_t *p = (const uint8_t *)item;
+    data.insert(data.end(), p, p + item_size);
 }
 
-void set_string(char *data, const std::string &str) {
-    for (size_t i=0; i < 16; i++) {
-        if (i < str.size()) {
-            data[i] = str[i];
-        } else {
-            data[i] = 0;
-        }
-    }
+static void vec_append_zeros(std::vector<uint8_t> &data, size_t n) {
+    data.insert(data.end(), n, 0);
+}
+
+static void vec_append_blob(std::vector<uint8_t> &data, const uint8_t *blob, size_t n) {
+    data.insert(data.end(), blob, blob + n);
 }
 
 int main() {
     std::cout << "Constructing `data` in memory." << std::endl;
 
     std::vector<uint8_t> data;
+    data.reserve(33512);
 
+    // Header + load commands exactly matching test.x produced by ld.
     {
-        // Header
         mach_header_64 header = {
             .magic = MH_MAGIC_64,
             .cputype = CPU_TYPE_ARM64,
             .cpusubtype = 0,
             .filetype = 2,
-            .ncmds = 16,
-            .sizeofcmds = 744,
+            .ncmds = 17,
+            .sizeofcmds = 976,
             .flags = 2097285,
             .reserved = 0,
         };
-        vec_append(data, (uint8_t*)&header, sizeof(header));
+        vec_append(data, &header, sizeof(header));
     }
 
     {
-        // LC_SEGMENT_64
-        segment_command_64 segment = {
+        segment_command_64 s = {
             .cmd = LC_SEGMENT_64,
             .cmdsize = 72,
             .segname = "__PAGEZERO",
             .vmaddr = 0,
-            .vmsize = 0x100000000,
+            .vmsize = 0x100000000ULL,
             .fileoff = 0,
             .filesize = 0,
             .maxprot = 0,
@@ -54,202 +62,438 @@ int main() {
             .nsects = 0,
             .flags = 0,
         };
-        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+        vec_append(data, &s, sizeof(s));
     }
 
     {
-        // LC_SEGMENT_64
-        segment_command_64 segment = {
+        segment_command_64 s = {
             .cmd = LC_SEGMENT_64,
-            .cmdsize = 232,
+            .cmdsize = 312,
             .segname = "__TEXT",
-            .vmaddr = 0x100000000,
+            .vmaddr = 0x100000000ULL,
             .vmsize = 0x4000,
             .fileoff = 0,
             .filesize = 16384,
             .maxprot = 5,
             .initprot = 5,
-            .nsects = 2,
+            .nsects = 3,
             .flags = 0,
         };
-        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+        vec_append(data, &s, sizeof(s));
 
-        {
-            // Section 0
-            section_64 section = {
-                .sectname = "__text",
-                .segname = "__TEXT",
-                .addr = 0x100003fa0,
-                .size = 0x14,
-                .offset = 16288,
-                .align = 4,
-                .reloff = 0,
-                .nreloc = 0,
-                .flags = 2147484672,
-                .reserved1 = 0,
-                .reserved2 = 0,
-            };
-            vec_append(data, (uint8_t*)&section, sizeof(section));
-        }
+        section_64 text = {
+            .sectname = "__text",
+            .segname = "__TEXT",
+            .addr = 0x100000410ULL,
+            .size = 0x1c,
+            .offset = 1040,
+            .align = 4,
+            .reloff = 0,
+            .nreloc = 0,
+            .flags = 2147484672,
+            .reserved1 = 0,
+            .reserved2 = 0,
+        };
+        vec_append(data, &text, sizeof(text));
 
-        {
-            // Section 1
-            section_64 section = {
-                .sectname = "__unwind_info",
-                .segname = "__TEXT",
-                .addr = 0x100003fb4,
-                .size = 0x48,
-                .offset = 16308,
-                .align = 2,
-                .reloff = 0,
-                .nreloc = 0,
-                .flags = 0,
-                .reserved1 = 0,
-                .reserved2 = 0,
-            };
-            vec_append(data, (uint8_t*)&section, sizeof(section));
-        }
+        section_64 stubs = {
+            .sectname = "__stubs",
+            .segname = "__TEXT",
+            .addr = 0x10000042cULL,
+            .size = 0x18,
+            .offset = 1068,
+            .align = 2,
+            .reloff = 0,
+            .nreloc = 0,
+            .flags = 2147484680,
+            .reserved1 = 0,
+            .reserved2 = 12,
+        };
+        vec_append(data, &stubs, sizeof(stubs));
+
+        section_64 cstring = {
+            .sectname = "__cstring",
+            .segname = "__TEXT",
+            .addr = 0x100000444ULL,
+            .size = 0x3c,
+            .offset = 1092,
+            .align = 0,
+            .reloff = 0,
+            .nreloc = 0,
+            .flags = 2,
+            .reserved1 = 0,
+            .reserved2 = 0,
+        };
+        vec_append(data, &cstring, sizeof(cstring));
     }
 
     {
-        // LC_SEGMENT_64
-        segment_command_64 segment = {
+        segment_command_64 s = {
+            .cmd = LC_SEGMENT_64,
+            .cmdsize = 152,
+            .segname = "__DATA_CONST",
+            .vmaddr = 0x100004000ULL,
+            .vmsize = 0x4000,
+            .fileoff = 16384,
+            .filesize = 16384,
+            .maxprot = 3,
+            .initprot = 3,
+            .nsects = 1,
+            .flags = 16,
+        };
+        vec_append(data, &s, sizeof(s));
+
+        section_64 got = {
+            .sectname = "__got",
+            .segname = "__DATA_CONST",
+            .addr = 0x100004000ULL,
+            .size = 0x10,
+            .offset = 16384,
+            .align = 3,
+            .reloff = 0,
+            .nreloc = 0,
+            .flags = 6,
+            .reserved1 = 2,
+            .reserved2 = 0,
+        };
+        vec_append(data, &got, sizeof(got));
+    }
+
+    {
+        segment_command_64 s = {
             .cmd = LC_SEGMENT_64,
             .cmdsize = 72,
             .segname = "__LINKEDIT",
-            .vmaddr = 0x100004000,
+            .vmaddr = 0x100008000ULL,
             .vmsize = 0x4000,
-            .fileoff = 16384,
-            .filesize = 451,
+            .fileoff = 32768,
+            .filesize = 744,
             .maxprot = 1,
             .initprot = 1,
             .nsects = 0,
             .flags = 0,
         };
-        vec_append(data, (uint8_t*)&segment, sizeof(segment));
+        vec_append(data, &s, sizeof(s));
     }
 
     {
-        // LC_DYLD_CHAINED_FIXUPS
         section_offset_len s = {
             .cmd = LC_DYLD_CHAINED_FIXUPS,
             .cmdsize = 16,
-            .offset = 16384,
-            .len = 56,
+            .offset = 32768,
+            .len = 104,
         };
-        vec_append(data, (uint8_t*)&s, sizeof(s));
+        vec_append(data, &s, sizeof(s));
     }
 
     {
-        // LC_DYLD_EXPORT_TRIE
         section_offset_len s = {
             .cmd = LC_DYLD_EXPORTS_TRIE,
             .cmdsize = 16,
-            .offset = 16440,
+            .offset = 32872,
             .len = 48,
         };
-        vec_append(data, (uint8_t*)&s, sizeof(s));
+        vec_append(data, &s, sizeof(s));
     }
 
     {
-        // LC_SYMTAB
         symtab_command s = {
             .cmd = LC_SYMTAB,
             .cmdsize = 24,
-            .symoff = 16496,
-            .nsyms = 2,
-            .stroff = 16528,
-            .strsize = 32,
+            .symoff = 32928,
+            .nsyms = 6,
+            .stroff = 33040,
+            .strsize = 56,
         };
-        vec_append(data, (uint8_t*)&s, sizeof(s));
+        vec_append(data, &s, sizeof(s));
     }
 
     {
-        // LC_DYSYMTAB
         dysymtab_command s = {
             .cmd = LC_DYSYMTAB,
             .cmdsize = 80,
             .ilocalsym = 0,
-            .nlocalsym = 0,
-            .iextdefsym = 0,
-            .nextdefsym = 0,
-            .iundefsym = 0,
-            .nundefsym = 0,
+            .nlocalsym = 2,
+            .iextdefsym = 2,
+            .nextdefsym = 2,
+            .iundefsym = 4,
+            .nundefsym = 2,
             .tocoff = 0,
             .ntoc = 0,
             .modtaboff = 0,
             .nmodtab = 0,
             .extrefsymoff = 0,
             .nextrefsyms = 0,
-            .indirectsymoff = 0,
-            .nindirectsyms = 0,
+            .indirectsymoff = 33024,
+            .nindirectsyms = 4,
             .extreloff = 0,
             .nextrel = 0,
             .locreloff = 0,
             .nlocrel = 0,
         };
-        vec_append(data, (uint8_t*)&s, sizeof(s));
+        vec_append(data, &s, sizeof(s));
     }
 
     {
-        // LC_LOAD_DYLINKER
         dylinker_command s = {
             .cmd = LC_LOAD_DYLINKER,
             .cmdsize = 32,
-            .name.offset = 12
+            .name.offset = 12,
         };
-        vec_append(data, (uint8_t*)&s, sizeof(s));
-
-        char text[20] = "/usr/lib/dyld";
-        vec_append(data, (uint8_t*)&text, sizeof(text));
+        vec_append(data, &s, sizeof(s));
+        const char dyld_name[20] = "/usr/lib/dyld";
+        vec_append(data, dyld_name, sizeof(dyld_name));
     }
 
-    /*
-    The following load commands still have to be saved:
+    {
+        uuid_command s = {
+            .cmd = LC_UUID,
+            .cmdsize = 24,
+            .uuid = {0x27, 0x07, 0xdd, 0x62, 0x09, 0x67, 0x3c, 0xc0,
+                     0xb2, 0xac, 0xef, 0xc3, 0x2b, 0x1c, 0xf6, 0x3a},
+        };
+        vec_append(data, &s, sizeof(s));
+    }
 
-Load command  8 LC_UUID
-    cmdsize: 24
-    expect : 24
-    UUID: 844ACFC9-A60A-3347-8BFA-2F39FC580DAE
-Load command  9 LC_BUILD_VERSION
-    cmdsize: 32
-    expect : 24
-    platform: 1
-    minos   : 12.0.0
-    sdk   : 10.17.0
-    ntools   : 1
-Load command 10 LC_SOURCE_VERSION
-    cmdsize: 16
-    expect : 16
-    version : 0
-Load command 11 LC_MAIN
-    cmdsize: 24
-    expect : 24
-    entryoff : 16288
-    stacksize: 0
-Load command 12 LC_LOAD_DYLIB
-    cmdsize: 56
-    expect : 24
-    Dylib name: /usr/lib/libSystem.B.dylib
-Load command 13 LC_FUNCTION_STARTS
-    cmdsize: 16
-    expect : 16
-    dataoff : 16488
-    datasize: 8
-Load command 14 LC_DATA_IN_CODE
-    cmdsize: 16
-    expect : 16
-    dataoff : 16496
-    datasize: 0
-Load command 15 LC_CODE_SIGNATURE
-    cmdsize: 16
-    expect : 16
-    dataoff : 16560
-    datasize: 275
-    */
+    {
+        build_version_command s = {
+            .cmd = LC_BUILD_VERSION,
+            .cmdsize = 32,
+            .platform = 1,
+            .minos = 0x000f0700,
+            .sdk = 0,
+            .ntools = 1,
+        };
+        vec_append(data, &s, sizeof(s));
+        const uint8_t build_tool_version[8] = {
+            0x03, 0x00, 0x00, 0x00,
+            0x00, 0x01, 0xce, 0x04,
+        };
+        vec_append_blob(data, build_tool_version, sizeof(build_tool_version));
+    }
+
+    {
+        source_version_command s = {
+            .cmd = LC_SOURCE_VERSION,
+            .cmdsize = 16,
+            .version = 0,
+        };
+        vec_append(data, &s, sizeof(s));
+    }
+
+    {
+        entry_point_command s = {
+            .cmd = LC_MAIN,
+            .cmdsize = 24,
+            .entryoff = 1040,
+            .stacksize = 0,
+        };
+        vec_append(data, &s, sizeof(s));
+    }
+
+    {
+        dylib_command s = {
+            .cmd = LC_LOAD_DYLIB,
+            .cmdsize = 56,
+            .dylib = {
+                .name = {.offset = 24},
+                .timestamp = 2,
+                .current_version = 0x054c0000,
+                .compatibility_version = 0x00010000,
+            },
+        };
+        vec_append(data, &s, sizeof(s));
+        const char libsystem_name[32] = "/usr/lib/libSystem.B.dylib";
+        vec_append(data, libsystem_name, sizeof(libsystem_name));
+    }
+
+    {
+        section_offset_len s = {
+            .cmd = LC_FUNCTION_STARTS,
+            .cmdsize = 16,
+            .offset = 32920,
+            .len = 8,
+        };
+        vec_append(data, &s, sizeof(s));
+    }
+
+    {
+        section_offset_len s = {
+            .cmd = LC_DATA_IN_CODE,
+            .cmdsize = 16,
+            .offset = 32928,
+            .len = 0,
+        };
+        vec_append(data, &s, sizeof(s));
+    }
+
+    {
+        section_offset_len s = {
+            .cmd = LC_CODE_SIGNATURE,
+            .cmdsize = 16,
+            .offset = 33104,
+            .len = 408,
+        };
+        vec_append(data, &s, sizeof(s));
+    }
+
+    REQUIRE(data.size() == 1008);
+
+    // __TEXT payload pieces
+    if (data.size() < 1040) vec_append_zeros(data, 1040 - data.size());
+    const uint8_t text_bytes[28] = {
+        0x20, 0x00, 0x80, 0xd2, 0x01, 0x00, 0x00, 0x90,
+        0x21, 0x10, 0x11, 0x91, 0xa2, 0x03, 0x80, 0xd2,
+        0x06, 0x00, 0x00, 0x94, 0x40, 0x05, 0x80, 0xd2,
+        0x01, 0x00, 0x00, 0x94,
+    };
+    REQUIRE(data.size() == 1040);
+    vec_append_blob(data, text_bytes, sizeof(text_bytes));
+
+    const uint8_t stubs_bytes[24] = {
+        0x30, 0x00, 0x00, 0x90, 0x10, 0x02, 0x40, 0xf9,
+        0x00, 0x02, 0x1f, 0xd6, 0x30, 0x00, 0x00, 0x90,
+        0x10, 0x06, 0x40, 0xf9, 0x00, 0x02, 0x1f, 0xd6,
+    };
+    REQUIRE(data.size() == 1068);
+    vec_append_blob(data, stubs_bytes, sizeof(stubs_bytes));
+
+    const uint8_t cstring_bytes[60] = {
+        0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x66, 0x72, 0x6f, 0x6d,
+        0x20, 0x6c, 0x69, 0x62, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d,
+        0x20, 0x77, 0x72, 0x69, 0x74, 0x65, 0x28, 0x29, 0x0a, 0x00,
+        0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x66, 0x72, 0x6f, 0x6d,
+        0x20, 0x6c, 0x69, 0x62, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d,
+        0x20, 0x77, 0x72, 0x69, 0x74, 0x65, 0x28, 0x29, 0x0a, 0x00,
+    };
+    REQUIRE(data.size() == 1092);
+    vec_append_blob(data, cstring_bytes, sizeof(cstring_bytes));
+
+    // Pad __TEXT to one page.
+    if (data.size() < 16384) vec_append_zeros(data, 16384 - data.size());
+    REQUIRE(data.size() == 16384);
+
+    // __DATA_CONST (__got then zero padding)
+    const uint8_t got_bytes[16] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x80,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
+    };
+    vec_append_blob(data, got_bytes, sizeof(got_bytes));
+    if (data.size() < 32768) vec_append_zeros(data, 32768 - data.size());
+    REQUIRE(data.size() == 32768);
+
+    // __LINKEDIT payload blobs.
+    const uint8_t chained_fixups[104] = {
+        0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
+        0x50, 0x00, 0x00, 0x00, 0x58, 0x00, 0x00, 0x00,
+        0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x18, 0x00, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00,
+        0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x02, 0x00, 0x00, 0x01, 0x0e, 0x00, 0x00,
+        0x00, 0x5f, 0x65, 0x78, 0x69, 0x74, 0x00, 0x5f,
+        0x77, 0x72, 0x69, 0x74, 0x65, 0x00, 0x00, 0x00,
+    };
+
+    const uint8_t exports_trie[48] = {
+        0x00, 0x01, 0x5f, 0x00, 0x12, 0x00, 0x00, 0x00,
+        0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x90,
+        0x08, 0x00, 0x00, 0x02, 0x5f, 0x6d, 0x68, 0x5f,
+        0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f,
+        0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x00, 0x09,
+        0x6d, 0x61, 0x69, 0x6e, 0x00, 0x0d, 0x00, 0x00,
+    };
+
+    const uint8_t function_starts[8] = {
+        0x90, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    const uint8_t symtab_bytes[96] = {
+        0x29, 0x00, 0x00, 0x00, 0x0e, 0x03, 0x00, 0x00,
+        0x44, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x2d, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+        0x1d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x02, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x10, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x16, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x00, 0x00,
+        0x10, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x1c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x22, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    const uint8_t indirect_syms[16] = {
+        0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
+        0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
+    };
+
+    const uint8_t strtab_bytes[56] = {
+        0x20, 0x00, 0x5f, 0x5f, 0x6d, 0x68, 0x5f, 0x65,
+        0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x68,
+        0x65, 0x61, 0x64, 0x65, 0x72, 0x00, 0x5f, 0x6d,
+        0x61, 0x69, 0x6e, 0x00, 0x5f, 0x65, 0x78, 0x69,
+        0x74, 0x00, 0x5f, 0x77, 0x72, 0x69, 0x74, 0x65,
+        0x00, 0x6d, 0x73, 0x67, 0x00, 0x6d, 0x73, 0x67,
+        0x5f, 0x6c, 0x65, 0x6e, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    const uint8_t code_signature[408] = {
+        0xfa, 0xde, 0x0c, 0xc0, 0x00, 0x00, 0x01, 0x93, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0xfa, 0xde, 0x0c, 0x02,
+        0x00, 0x00, 0x01, 0x7f, 0x00, 0x02, 0x04, 0x00, 0x00, 0x02, 0x00, 0x02,
+        0x00, 0x00, 0x00, 0x5f, 0x00, 0x00, 0x00, 0x58, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x81, 0x50, 0x20, 0x02, 0x00, 0x0c,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x74, 0x65, 0x73, 0x74, 0x2e, 0x78, 0x00, 0xdd, 0x39, 0x08, 0x6c, 0xcb,
+        0x43, 0x60, 0x1a, 0x8f, 0xea, 0x32, 0xac, 0x8b, 0x15, 0x14, 0x2c, 0x9c,
+        0xaf, 0x96, 0xcd, 0x38, 0x0b, 0xb4, 0xc6, 0x37, 0x8a, 0x98, 0x25, 0x96,
+        0xc5, 0x4e, 0xd9, 0xad, 0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66,
+        0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c,
+        0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0xad,
+        0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1,
+        0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85,
+        0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0xad, 0x7f, 0xac, 0xb2, 0x58,
+        0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f,
+        0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48,
+        0x89, 0x2c, 0xa7, 0x61, 0x52, 0xb4, 0x7e, 0x6a, 0xd4, 0x8a, 0xca, 0x04,
+        0x8c, 0x42, 0xa4, 0x82, 0x00, 0x69, 0x7c, 0xbf, 0xa0, 0x6c, 0x8a, 0x79,
+        0xca, 0x11, 0x6c, 0x5c, 0xee, 0x4b, 0x34, 0x82, 0x79, 0x16, 0xa8, 0xad,
+        0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1,
+        0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85,
+        0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0xad, 0x7f, 0xac, 0xb2, 0x58,
+        0x6f, 0xc6, 0xe9, 0x66, 0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f,
+        0x58, 0x05, 0xff, 0x7c, 0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48,
+        0x89, 0x2c, 0xa7, 0xad, 0x7f, 0xac, 0xb2, 0x58, 0x6f, 0xc6, 0xe9, 0x66,
+        0xc0, 0x04, 0xd7, 0xd1, 0xd1, 0x6b, 0x02, 0x4f, 0x58, 0x05, 0xff, 0x7c,
+        0xb4, 0x7c, 0x7a, 0x85, 0xda, 0xbd, 0x8b, 0x48, 0x89, 0x2c, 0xa7, 0x83,
+        0x1e, 0x18, 0xcb, 0xa1, 0x22, 0x48, 0x72, 0xdd, 0x12, 0xd4, 0xfc, 0x7b,
+        0x94, 0x5b, 0x18, 0x94, 0x31, 0xbb, 0x64, 0x64, 0x4f, 0x35, 0x6f, 0x77,
+        0xe6, 0x5b, 0x5e, 0x4f, 0x60, 0x7a, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    vec_append_blob(data, chained_fixups, sizeof(chained_fixups));
+    vec_append_blob(data, exports_trie, sizeof(exports_trie));
+    vec_append_blob(data, function_starts, sizeof(function_starts));
+    vec_append_blob(data, symtab_bytes, sizeof(symtab_bytes));
+    vec_append_blob(data, indirect_syms, sizeof(indirect_syms));
+    vec_append_blob(data, strtab_bytes, sizeof(strtab_bytes));
+
+    // 8-byte hole between string table and code signature.
+    if (data.size() < 33104) vec_append_zeros(data, 33104 - data.size());
+    REQUIRE(data.size() == 33104);
+    vec_append_blob(data, code_signature, sizeof(code_signature));
+
+    REQUIRE(data.size() == 33512);
 
     std::cout << "Saving to `test2.x`." << std::endl;
-
     write_file("test2.x", data);
 
     std::cout << "Done." << std::endl;
