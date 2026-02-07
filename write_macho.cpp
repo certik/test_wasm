@@ -75,28 +75,112 @@ static void append_padding_to(std::vector<uint8_t> &out, size_t target_size) {
     out.insert(out.end(), target_size - out.size(), 0);
 }
 
+static constexpr uint64_t kTextAddr = 0x100000410ULL;
+static constexpr uint64_t kStubsAddr = 0x10000042cULL;
+static constexpr uint64_t kCStringAddr = 0x100000444ULL;
+static constexpr uint64_t kGotAddr = 0x100004000ULL;
+
+static uint32_t arm64_movz_64(uint8_t rd, uint16_t imm16, uint8_t shift) {
+    REQUIRE(rd <= 31);
+    REQUIRE((shift % 16) == 0);
+    const uint8_t hw = (uint8_t)(shift / 16);
+    REQUIRE(hw <= 3);
+    return 0xd2800000U | ((uint32_t)hw << 21) | ((uint32_t)imm16 << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_adrp(uint8_t rd, int64_t page_delta) {
+    REQUIRE(rd <= 31);
+    REQUIRE(page_delta >= -(1 << 20));
+    REQUIRE(page_delta <= ((1 << 20) - 1));
+
+    const int64_t imm = page_delta;
+    const uint32_t immlo = (uint32_t)(imm & 0x3);
+    const uint32_t immhi = (uint32_t)((imm >> 2) & 0x7ffff);
+    return 0x90000000U | (immlo << 29) | (immhi << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_add_imm_64(uint8_t rd, uint8_t rn, uint16_t imm12, uint8_t shift) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(imm12 <= 0x0fff);
+    REQUIRE(shift == 0 || shift == 12);
+    const uint32_t sh = shift == 12 ? 1U : 0U;
+    return 0x91000000U | (sh << 22) | ((uint32_t)imm12 << 10) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_bl(int32_t imm26) {
+    REQUIRE(imm26 >= -(1 << 25));
+    REQUIRE(imm26 <= ((1 << 25) - 1));
+    return 0x94000000U | ((uint32_t)imm26 & 0x03ffffffU);
+}
+
+static uint32_t arm64_ldr_imm_u64(uint8_t rt, uint8_t rn, uint16_t byte_offset) {
+    REQUIRE(rt <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE((byte_offset % 8) == 0);
+    const uint16_t imm12 = (uint16_t)(byte_offset / 8);
+    REQUIRE(imm12 <= 0x0fff);
+    return 0xf9400000U | ((uint32_t)imm12 << 10) | ((uint32_t)rn << 5) | (uint32_t)rt;
+}
+
+static uint32_t arm64_br(uint8_t rn) {
+    REQUIRE(rn <= 31);
+    return 0xd61f0000U | ((uint32_t)rn << 5);
+}
+
+static void emit_arm64(std::vector<uint8_t> &out, uint32_t inst) {
+    append_le32(out, inst);
+}
+
+static int64_t arm64_adrp_page_delta(uint64_t from_insn_addr, uint64_t to_addr) {
+    const uint64_t from_page = from_insn_addr & ~0xfffULL;
+    const uint64_t to_page = to_addr & ~0xfffULL;
+    REQUIRE((to_page % 4096) == 0);
+    REQUIRE((from_page % 4096) == 0);
+    return (int64_t)((to_page - from_page) / 4096);
+}
+
+static int32_t arm64_bl_imm26_from_addrs(uint64_t from_insn_addr, uint64_t to_addr) {
+    const int64_t delta = (int64_t)to_addr - (int64_t)from_insn_addr;
+    REQUIRE((delta % 4) == 0);
+    return (int32_t)(delta / 4);
+}
+
 static std::vector<uint8_t> build_text_bytes(uint16_t msg_len) {
     // _main in exit.asm:
     //   mov x0,#1 ; adrp/add for msg ; mov x2,#msg_len ; bl _write ; mov x0,#42 ; bl _exit
     REQUIRE(msg_len <= 0xffff);
-    const uint32_t mov_x2_imm = 0xd2800000U | ((uint32_t)msg_len << 5) | 2U;
-    const uint32_t instrs[] = {
-        0xd2800020, 0x90000001, 0x91111021, mov_x2_imm,
-        0x94000006, 0xd2800540, 0x94000001,
-    };
+    const uint64_t kMainAdrpMsgAddr = kTextAddr + 0x4;
+    const uint64_t kMainBlWriteAddr = kTextAddr + 0x10;
+    const uint64_t kMainBlExitAddr = kTextAddr + 0x18;
+    const uint64_t kExitStubAddr = kStubsAddr + 0x0;
+    const uint64_t kWriteStubAddr = kStubsAddr + 0xc;
+
     std::vector<uint8_t> out;
-    for (uint32_t inst : instrs) append_le32(out, inst);
+    emit_arm64(out, arm64_movz_64(0, 1, 0));                      // mov x0, #1
+    emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(kMainAdrpMsgAddr, kCStringAddr)));
+    emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(kCStringAddr & 0xfffU), 0));
+    emit_arm64(out, arm64_movz_64(2, msg_len, 0));                // mov x2, #msg_len
+    emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(kMainBlWriteAddr, kWriteStubAddr)));
+    emit_arm64(out, arm64_movz_64(0, 42, 0));                     // mov x0, #42
+    emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(kMainBlExitAddr, kExitStubAddr)));
     REQUIRE(out.size() == 28);
     return out;
 }
 
 static std::vector<uint8_t> build_stub_bytes() {
     // 2 symbol stubs, 12 bytes each
-    const uint32_t stub0[] = {0x90000030, 0xf9400210, 0xd61f0200};
-    const uint32_t stub1[] = {0x90000030, 0xf9400610, 0xd61f0200};
+    const uint64_t kStub0AdrpAddr = kStubsAddr + 0x0;
+    const uint64_t kStub1AdrpAddr = kStubsAddr + 0xc;
+
     std::vector<uint8_t> out;
-    for (uint32_t inst : stub0) append_le32(out, inst);
-    for (uint32_t inst : stub1) append_le32(out, inst);
+    emit_arm64(out, arm64_adrp(16, arm64_adrp_page_delta(kStub0AdrpAddr, kGotAddr)));
+    emit_arm64(out, arm64_ldr_imm_u64(16, 16, 0));                // ldr x16, [x16, #0]
+    emit_arm64(out, arm64_br(16));                                // br x16
+
+    emit_arm64(out, arm64_adrp(16, arm64_adrp_page_delta(kStub1AdrpAddr, kGotAddr)));
+    emit_arm64(out, arm64_ldr_imm_u64(16, 16, 8));                // ldr x16, [x16, #8]
+    emit_arm64(out, arm64_br(16));                                // br x16
     REQUIRE(out.size() == 24);
     return out;
 }
