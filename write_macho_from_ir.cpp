@@ -26,9 +26,13 @@ static const char *kLlvmIr = R"IR(
 
 declare i64 @write(i32, ptr, i64)
 declare void @exit(i32)
+declare ptr @i64_to_ascii_nl(i64)
+declare i64 @strlen(ptr)
 define void @print_i64(i64 %n) {
 entry:
-  ; lowered by this toy compiler into decimal write sequence
+  %s = call ptr @i64_to_ascii_nl(i64 %n)
+  %len = call i64 @strlen(ptr %s)
+  %written = call i64 @write(i32 1, ptr %s, i64 %len)
   ret void
 }
 
@@ -60,6 +64,7 @@ struct Operation {
 
 struct ProgramIR {
     std::unordered_map<std::string, std::string> globals;
+    std::vector<std::string> print_i64_body;
     std::vector<Operation> ops;
 };
 
@@ -208,6 +213,7 @@ static std::string decode_llvm_c_string(const std::string &encoded) {
 static ProgramIR parse_program_ir(const std::string &ir_text) {
     ProgramIR program;
     bool in_main = false;
+    bool in_print_i64 = false;
     size_t start = 0;
     while (start <= ir_text.size()) {
         const size_t end = ir_text.find('\n', start);
@@ -222,8 +228,12 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
                 program.globals[global_name] = decode_llvm_c_string(line.substr(cpos + 2, qend - (cpos + 2)));
             } else if (line.rfind("define i32 @main(", 0) == 0) {
                 in_main = true;
+            } else if (line.rfind("define void @print_i64(", 0) == 0) {
+                in_print_i64 = true;
             } else if (in_main && line == "}") {
                 in_main = false;
+            } else if (in_print_i64 && line == "}") {
+                in_print_i64 = false;
             } else if (in_main && line.find("@write(") != std::string::npos) {
                 const std::string symbol = parse_symbol_after(line, "ptr @");
                 const int64_t write_len = parse_i64_after_last(line, "i64 ");
@@ -231,6 +241,8 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
             } else if (in_main && line.find("call void @print_i64(") != std::string::npos) {
                 const int64_t value = parse_i64_after_last(line, "i64 ");
                 program.ops.push_back(Operation{OpKind::PrintI64, "", value});
+            } else if (in_print_i64 && line != "entry:") {
+                program.print_i64_body.push_back(line);
             } else if (in_main && line.find("call void @exit(") != std::string::npos) {
                 const int64_t exit_code = parse_i64_after(line, "i32 ");
                 program.ops.push_back(Operation{OpKind::ExitCode, "", exit_code});
@@ -244,6 +256,7 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
     }
 
     REQUIRE(!program.globals.empty());
+    REQUIRE(!program.print_i64_body.empty());
     REQUIRE(!program.ops.empty());
     return program;
 }
@@ -329,6 +342,48 @@ struct WritePlan {
     std::vector<uint8_t> cstring_bytes;
 };
 
+static std::string i64_to_ascii_nl(int64_t value) {
+    std::string s = std::to_string(value);
+    s.push_back('\n');
+    return s;
+}
+
+static WriteChunk lower_print_i64_from_ir(const ProgramIR &program, int64_t n) {
+    bool saw_convert = false;
+    bool saw_strlen = false;
+    bool saw_write = false;
+    bool saw_ret = false;
+
+    std::string s_value;
+    uint16_t len_value = 0;
+    for (const std::string &line : program.print_i64_body) {
+        if (line == "%s = call ptr @i64_to_ascii_nl(i64 %n)") {
+            s_value = i64_to_ascii_nl(n);
+            saw_convert = true;
+            continue;
+        }
+        if (line == "%len = call i64 @strlen(ptr %s)") {
+            REQUIRE(saw_convert);
+            REQUIRE(s_value.size() <= 0xffff);
+            len_value = (uint16_t)s_value.size();
+            saw_strlen = true;
+            continue;
+        }
+        if (line == "%written = call i64 @write(i32 1, ptr %s, i64 %len)") {
+            REQUIRE(saw_strlen);
+            saw_write = true;
+            continue;
+        }
+        if (line == "ret void") {
+            saw_ret = true;
+            continue;
+        }
+        REQUIRE(false);
+    }
+    REQUIRE(saw_convert && saw_strlen && saw_write && saw_ret);
+    return WriteChunk{.bytes = s_value, .len = len_value};
+}
+
 static WritePlan build_write_plan(const ProgramIR &program) {
     WritePlan plan;
     for (const Operation &op : program.ops) {
@@ -348,13 +403,7 @@ static WritePlan build_write_plan(const ProgramIR &program) {
             continue;
         }
         if (op.kind == OpKind::PrintI64) {
-            std::string s = std::to_string(op.value);
-            s.push_back('\n');
-            REQUIRE(s.size() <= 0xffff);
-            WriteChunk chunk = {
-                .bytes = s,
-                .len = (uint16_t)s.size(),
-            };
+            WriteChunk chunk = lower_print_i64_from_ir(program, op.value);
             plan.chunks.push_back(chunk);
             plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
             append_u8(plan.cstring_bytes, 0);
