@@ -21,32 +21,45 @@
     } while (0)
 
 static const char *kLlvmIr = R"IR(
-@msg = private unnamed_addr constant [26 x i8] c"hello from tiny LLVM IR!\0A\00", align 1
+@prefix = private unnamed_addr constant [24 x i8] c"numbers via print_i64:\0A\00", align 1
+@suffix = private unnamed_addr constant [7 x i8] c"done.\0A\00", align 1
 
 declare i64 @write(i32, ptr, i64)
 declare void @exit(i32)
+define void @print_i64(i64 %n) {
+entry:
+  ; lowered by this toy compiler into decimal write sequence
+  ret void
+}
 
 define i32 @main() {
 entry:
-  %written = call i64 @write(i32 1, ptr @msg, i64 25)
+  %prefix_written = call i64 @write(i32 1, ptr @prefix, i64 23)
+  call void @print_i64(i64 0)
+  call void @print_i64(i64 7)
+  call void @print_i64(i64 42)
+  call void @print_i64(i64 12345)
+  %suffix_written = call i64 @write(i32 1, ptr @suffix, i64 6)
   call void @exit(i32 42)
   ret i32 42
 }
 )IR";
 
 enum class OpKind {
-    WriteMsg,
+    WriteGlobal,
+    PrintI64,
     ExitCode,
     ReturnCode,
 };
 
 struct Operation {
     OpKind kind;
+    std::string symbol;
     int64_t value;
 };
 
 struct ProgramIR {
-    std::string message;
+    std::unordered_map<std::string, std::string> globals;
     std::vector<Operation> ops;
 };
 
@@ -134,6 +147,24 @@ static int64_t parse_i64_after_last(const std::string &line, const std::string &
     return parse_i64_after(line.substr(p), needle);
 }
 
+static std::string parse_global_name_from_def(const std::string &line) {
+    REQUIRE(!line.empty() && line[0] == '@');
+    size_t i = 1;
+    while (i < line.size() && (std::isalnum((unsigned char)line[i]) || line[i] == '_' || line[i] == '.')) i++;
+    REQUIRE(i > 1);
+    return line.substr(1, i - 1);
+}
+
+static std::string parse_symbol_after(const std::string &line, const std::string &needle) {
+    const size_t p = line.find(needle);
+    REQUIRE(p != std::string::npos);
+    size_t i = p + needle.size();
+    size_t b = i;
+    while (i < line.size() && (std::isalnum((unsigned char)line[i]) || line[i] == '_' || line[i] == '.')) i++;
+    REQUIRE(i > b);
+    return line.substr(b, i - b);
+}
+
 static int hex_nibble(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -176,33 +207,43 @@ static std::string decode_llvm_c_string(const std::string &encoded) {
 
 static ProgramIR parse_program_ir(const std::string &ir_text) {
     ProgramIR program;
+    bool in_main = false;
     size_t start = 0;
     while (start <= ir_text.size()) {
         const size_t end = ir_text.find('\n', start);
         const std::string line = trim_copy(ir_text.substr(start, end == std::string::npos ? std::string::npos : end - start));
         if (!line.empty()) {
-            if (line.rfind("@msg", 0) == 0) {
+            if (line[0] == '@' && line.find(" c\"") != std::string::npos) {
+                const std::string global_name = parse_global_name_from_def(line);
                 const size_t cpos = line.find("c\"");
                 REQUIRE(cpos != std::string::npos);
                 const size_t qend = line.find('"', cpos + 2);
                 REQUIRE(qend != std::string::npos);
-                program.message = decode_llvm_c_string(line.substr(cpos + 2, qend - (cpos + 2)));
-            } else if (line.find("call i64 @write(") != std::string::npos) {
+                program.globals[global_name] = decode_llvm_c_string(line.substr(cpos + 2, qend - (cpos + 2)));
+            } else if (line.rfind("define i32 @main(", 0) == 0) {
+                in_main = true;
+            } else if (in_main && line == "}") {
+                in_main = false;
+            } else if (in_main && line.find("@write(") != std::string::npos) {
+                const std::string symbol = parse_symbol_after(line, "ptr @");
                 const int64_t write_len = parse_i64_after_last(line, "i64 ");
-                program.ops.push_back(Operation{OpKind::WriteMsg, write_len});
-            } else if (line.find("call void @exit(") != std::string::npos) {
+                program.ops.push_back(Operation{OpKind::WriteGlobal, symbol, write_len});
+            } else if (in_main && line.find("call void @print_i64(") != std::string::npos) {
+                const int64_t value = parse_i64_after_last(line, "i64 ");
+                program.ops.push_back(Operation{OpKind::PrintI64, "", value});
+            } else if (in_main && line.find("call void @exit(") != std::string::npos) {
                 const int64_t exit_code = parse_i64_after(line, "i32 ");
-                program.ops.push_back(Operation{OpKind::ExitCode, exit_code});
-            } else if (line.rfind("ret i32 ", 0) == 0) {
+                program.ops.push_back(Operation{OpKind::ExitCode, "", exit_code});
+            } else if (in_main && line.rfind("ret i32 ", 0) == 0) {
                 const int64_t ret_code = parse_i64_after(line, "ret i32 ");
-                program.ops.push_back(Operation{OpKind::ReturnCode, ret_code});
+                program.ops.push_back(Operation{OpKind::ReturnCode, "", ret_code});
             }
         }
         if (end == std::string::npos) break;
         start = end + 1;
     }
 
-    REQUIRE(!program.message.empty());
+    REQUIRE(!program.globals.empty());
     REQUIRE(!program.ops.empty());
     return program;
 }
@@ -273,27 +314,89 @@ static int32_t arm64_bl_imm26_from_addrs(uint64_t from_insn_addr, uint64_t to_ad
     return (int32_t)(delta / 4);
 }
 
+struct WriteChunk {
+    std::string bytes;
+    uint16_t len;
+};
+
+struct ResolvedWriteChunk {
+    uint64_t addr;
+    uint16_t len;
+};
+
+struct WritePlan {
+    std::vector<WriteChunk> chunks;
+    std::vector<uint8_t> cstring_bytes;
+};
+
+static WritePlan build_write_plan(const ProgramIR &program) {
+    WritePlan plan;
+    for (const Operation &op : program.ops) {
+        if (op.kind == OpKind::WriteGlobal) {
+            const auto it = program.globals.find(op.symbol);
+            REQUIRE(it != program.globals.end());
+            REQUIRE(op.value >= 0);
+            REQUIRE((size_t)op.value <= it->second.size());
+            REQUIRE(op.value <= 0xffff);
+            WriteChunk chunk = {
+                .bytes = it->second.substr(0, (size_t)op.value),
+                .len = (uint16_t)op.value,
+            };
+            plan.chunks.push_back(chunk);
+            plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
+            append_u8(plan.cstring_bytes, 0);
+            continue;
+        }
+        if (op.kind == OpKind::PrintI64) {
+            std::string s = std::to_string(op.value);
+            s.push_back('\n');
+            REQUIRE(s.size() <= 0xffff);
+            WriteChunk chunk = {
+                .bytes = s,
+                .len = (uint16_t)s.size(),
+            };
+            plan.chunks.push_back(chunk);
+            plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
+            append_u8(plan.cstring_bytes, 0);
+            continue;
+        }
+    }
+    REQUIRE(!plan.chunks.empty());
+    return plan;
+}
+
+static std::vector<ResolvedWriteChunk> resolve_write_chunks(const WritePlan &plan, uint64_t cstring_addr) {
+    std::vector<ResolvedWriteChunk> resolved;
+    uint64_t addr = cstring_addr;
+    for (const WriteChunk &chunk : plan.chunks) {
+        resolved.push_back(ResolvedWriteChunk{addr, chunk.len});
+        addr += (uint64_t)chunk.bytes.size() + 1;
+    }
+    return resolved;
+}
+
 static std::vector<uint8_t> build_text_bytes(const ProgramIR &program,
         uint64_t text_addr,
         uint64_t stubs_addr,
-        uint64_t cstring_addr) {
+        const std::vector<ResolvedWriteChunk> &writes) {
     const uint64_t exit_stub_addr = stubs_addr + 0x0;
     const uint64_t write_stub_addr = stubs_addr + 0xc;
-    const uint16_t msg_len = (uint16_t)program.message.size();
-    REQUIRE(program.message.size() <= 0xffff);
 
     std::vector<uint8_t> out;
+    size_t write_idx = 0;
     bool saw_exit = false;
     for (const Operation &op : program.ops) {
         switch (op.kind) {
-            case OpKind::WriteMsg: {
-                REQUIRE(op.value == (int64_t)program.message.size());
+            case OpKind::WriteGlobal:
+            case OpKind::PrintI64: {
+                REQUIRE(write_idx < writes.size());
+                const ResolvedWriteChunk w = writes[write_idx++];
                 const uint64_t adrp_addr = text_addr + out.size() + 4;
                 const uint64_t bl_addr = text_addr + out.size() + 16;
                 emit_arm64(out, arm64_movz_64(0, 1, 0));
-                emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(adrp_addr, cstring_addr)));
-                emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(cstring_addr & 0xfffU), 0));
-                emit_arm64(out, arm64_movz_64(2, msg_len, 0));
+                emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(adrp_addr, w.addr)));
+                emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(w.addr & 0xfffU), 0));
+                emit_arm64(out, arm64_movz_64(2, w.len, 0));
                 emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, write_stub_addr)));
                 break;
             }
@@ -314,13 +417,15 @@ static std::vector<uint8_t> build_text_bytes(const ProgramIR &program,
         }
     }
     REQUIRE(saw_exit);
+    REQUIRE(write_idx == writes.size());
     REQUIRE((out.size() % 4) == 0);
     return out;
 }
 
 static size_t op_encoded_size(const Operation &op) {
     switch (op.kind) {
-        case OpKind::WriteMsg: return 5 * 4;
+        case OpKind::WriteGlobal: return 5 * 4;
+        case OpKind::PrintI64: return 5 * 4;
         case OpKind::ExitCode: return 2 * 4;
         case OpKind::ReturnCode: return 2 * 4;
     }
@@ -340,12 +445,6 @@ static std::vector<uint8_t> build_stub_bytes(uint64_t stubs_addr, uint64_t got_a
     emit_arm64(out, arm64_ldr_imm_u64(16, 16, 8));
     emit_arm64(out, arm64_br(16));
     REQUIRE(out.size() == 24);
-    return out;
-}
-
-static std::vector<uint8_t> build_cstring_bytes(const std::string &msg) {
-    std::vector<uint8_t> out;
-    append_cstr(out, msg);
     return out;
 }
 
@@ -560,20 +659,23 @@ int main() {
     const ProgramIR program = parse_program_ir(kLlvmIr);
     std::cout << "Parsed LLVM IR ops:\n";
     for (const Operation &op : program.ops) {
-        if (op.kind == OpKind::WriteMsg) std::cout << "  write(msg, len=" << op.value << ")\n";
+        if (op.kind == OpKind::WriteGlobal) std::cout << "  write(@" << op.symbol << ", len=" << op.value << ")\n";
+        if (op.kind == OpKind::PrintI64) std::cout << "  print_i64(" << op.value << ")\n";
         if (op.kind == OpKind::ExitCode) std::cout << "  exit(" << op.value << ")\n";
         if (op.kind == OpKind::ReturnCode) std::cout << "  ret " << op.value << "\n";
     }
 
+    const WritePlan write_plan = build_write_plan(program);
     const uint64_t text_fileoff = 1040;
     const uint64_t text_addr = 0x100000000ULL + text_fileoff;
     size_t text_size = 0;
     for (const Operation &op : program.ops) text_size += op_encoded_size(op);
     const uint64_t stubs_addr = text_addr + text_size;
     const uint64_t cstring_addr = stubs_addr + 24;
-    const std::vector<uint8_t> text = build_text_bytes(program, text_addr, stubs_addr, cstring_addr);
+    const std::vector<ResolvedWriteChunk> resolved_writes = resolve_write_chunks(write_plan, cstring_addr);
+    const std::vector<uint8_t> text = build_text_bytes(program, text_addr, stubs_addr, resolved_writes);
     const std::vector<uint8_t> stubs = build_stub_bytes(stubs_addr, 0x100004000ULL);
-    const std::vector<uint8_t> cstr = build_cstring_bytes(program.message);
+    const std::vector<uint8_t> cstr = write_plan.cstring_bytes;
     const std::vector<uint8_t> got = build_got_bytes();
 
     std::vector<uint8_t> data;
@@ -718,7 +820,9 @@ int main() {
     std::vector<uint8_t> symtab;
     std::vector<uint8_t> indirect_syms;
     std::vector<uint8_t> strtab;
-    build_symbol_and_string_tables(symtab, indirect_syms, strtab, cstring_addr, program.message.size(), text_addr);
+    const uint64_t msg_addr = resolved_writes.empty() ? cstring_addr : resolved_writes[0].addr;
+    const uint64_t msg_len = resolved_writes.empty() ? 0 : resolved_writes[0].len;
+    build_symbol_and_string_tables(symtab, indirect_syms, strtab, msg_addr, msg_len, text_addr);
     data.insert(data.end(), chained_fixups.begin(), chained_fixups.end());
     data.insert(data.end(), exports_trie.begin(), exports_trie.end());
     data.insert(data.end(), function_starts.begin(), function_starts.end());
