@@ -109,6 +109,7 @@ struct Operation {
 
 struct ProgramIR {
     std::unordered_map<std::string, std::string> globals;
+    std::vector<std::string> global_order;
     std::vector<std::string> int_to_string_body;
     std::vector<std::string> print_i64_body;
     std::vector<Operation> ops;
@@ -272,6 +273,9 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
                 REQUIRE(cpos != std::string::npos);
                 const size_t qend = line.find('"', cpos + 2);
                 REQUIRE(qend != std::string::npos);
+                if (program.globals.find(global_name) == program.globals.end()) {
+                    program.global_order.push_back(global_name);
+                }
                 program.globals[global_name] = decode_llvm_c_string(line.substr(cpos + 2, qend - (cpos + 2)));
             } else if (line.rfind("define i32 @main(", 0) == 0) {
                 in_main = true;
@@ -381,227 +385,325 @@ static int32_t arm64_bl_imm26_from_addrs(uint64_t from_insn_addr, uint64_t to_ad
     return (int32_t)(delta / 4);
 }
 
-struct WriteChunk {
-    std::string bytes;
-    uint16_t len;
+struct CStringPlan {
+    std::vector<uint8_t> bytes;
+    std::unordered_map<std::string, uint64_t> addr;
 };
 
-struct ResolvedWriteChunk {
-    uint64_t addr;
-    uint16_t len;
+struct LabelPatch {
+    size_t at_word;
+    std::string label;
+    enum class Kind { B, CBZW } kind;
+    uint8_t rt;
 };
 
-struct WritePlan {
-    std::vector<WriteChunk> chunks;
-    std::vector<uint8_t> cstring_bytes;
+struct AsmBuilder {
+    std::vector<uint32_t> words;
+    std::unordered_map<std::string, size_t> labels;
+    std::vector<LabelPatch> patches;
 };
 
-static std::string lower_int_to_string_from_ir(const ProgramIR &program, int32_t num) {
-    bool saw_zero_store = false;
+static uint32_t arm64_add_imm_32(uint8_t rd, uint8_t rn, uint16_t imm12) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(imm12 <= 0x0fff);
+    return 0x11000000U | ((uint32_t)imm12 << 10) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_sub_imm_64(uint8_t rd, uint8_t rn, uint16_t imm12) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(imm12 <= 0x0fff);
+    return 0xd1000000U | ((uint32_t)imm12 << 10) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_add_reg_64(uint8_t rd, uint8_t rn, uint8_t rm) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(rm <= 31);
+    return 0x8b000000U | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_udiv_32(uint8_t rd, uint8_t rn, uint8_t rm) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(rm <= 31);
+    return 0x1ac00800U | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_mul_32(uint8_t rd, uint8_t rn, uint8_t rm) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(rm <= 31);
+    return 0x1b000000U | ((uint32_t)rm << 16) | (31U << 10) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_sub_reg_32(uint8_t rd, uint8_t rn, uint8_t rm) {
+    REQUIRE(rd <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(rm <= 31);
+    return 0x4b000000U | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd;
+}
+
+static uint32_t arm64_strb_uimm(uint8_t rt, uint8_t rn, uint16_t imm12) {
+    REQUIRE(rt <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(imm12 <= 0x0fff);
+    return 0x39000000U | ((uint32_t)imm12 << 10) | ((uint32_t)rn << 5) | (uint32_t)rt;
+}
+
+static uint32_t arm64_ldrb_uimm(uint8_t rt, uint8_t rn, uint16_t imm12) {
+    REQUIRE(rt <= 31);
+    REQUIRE(rn <= 31);
+    REQUIRE(imm12 <= 0x0fff);
+    return 0x39400000U | ((uint32_t)imm12 << 10) | ((uint32_t)rn << 5) | (uint32_t)rt;
+}
+
+static uint32_t arm64_b(int32_t imm26) {
+    REQUIRE(imm26 >= -(1 << 25));
+    REQUIRE(imm26 <= ((1 << 25) - 1));
+    return 0x14000000U | ((uint32_t)imm26 & 0x03ffffffU);
+}
+
+static uint32_t arm64_cbz_w(uint8_t rt, int32_t imm19) {
+    REQUIRE(rt <= 31);
+    REQUIRE(imm19 >= -(1 << 18));
+    REQUIRE(imm19 <= ((1 << 18) - 1));
+    return 0x34000000U | (((uint32_t)imm19 & 0x7ffffU) << 5) | (uint32_t)rt;
+}
+
+static void asm_label(AsmBuilder &a, const std::string &name) {
+    a.labels[name] = a.words.size();
+}
+
+static void asm_emit(AsmBuilder &a, uint32_t inst) {
+    a.words.push_back(inst);
+}
+
+static void asm_emit_b_to(AsmBuilder &a, const std::string &label) {
+    a.patches.push_back(LabelPatch{a.words.size(), label, LabelPatch::Kind::B, 0});
+    asm_emit(a, 0);
+}
+
+static void asm_emit_cbzw_to(AsmBuilder &a, uint8_t rt, const std::string &label) {
+    a.patches.push_back(LabelPatch{a.words.size(), label, LabelPatch::Kind::CBZW, rt});
+    asm_emit(a, 0);
+}
+
+static void asm_resolve_patches(AsmBuilder &a) {
+    for (const LabelPatch &p : a.patches) {
+        const auto it = a.labels.find(p.label);
+        REQUIRE(it != a.labels.end());
+        const int64_t delta_words = (int64_t)it->second - (int64_t)p.at_word;
+        if (p.kind == LabelPatch::Kind::B) {
+            a.words[p.at_word] = arm64_b((int32_t)delta_words);
+        } else if (p.kind == LabelPatch::Kind::CBZW) {
+            a.words[p.at_word] = arm64_cbz_w(p.rt, (int32_t)delta_words);
+        } else {
+            REQUIRE(false);
+        }
+    }
+}
+
+static std::vector<uint8_t> asm_to_bytes(const AsmBuilder &a) {
+    std::vector<uint8_t> out;
+    out.reserve(a.words.size() * 4);
+    for (uint32_t w : a.words) append_le32(out, w);
+    return out;
+}
+
+static void validate_int_to_string_ir(const ProgramIR &program) {
     bool saw_udiv = false;
+    bool saw_mul = false;
+    bool saw_sub = false;
     bool saw_digit_store = false;
     bool saw_ret = false;
     for (const std::string &line : program.int_to_string_body) {
-        if (line.find("store i8 0, ptr %1") != std::string::npos) {
-            saw_zero_store = true;
-            continue;
-        }
-        if (line.find("udiv i32") != std::string::npos) {
-            saw_udiv = true;
-            continue;
-        }
-        if (line.find("store i8 %22, ptr %24") != std::string::npos) {
-            saw_digit_store = true;
-            continue;
-        }
-        if (line == "ret ptr %1") {
-            saw_ret = true;
-            continue;
-        }
+        if (line.find("udiv i32") != std::string::npos) saw_udiv = true;
+        if (line.find("mul i32") != std::string::npos) saw_mul = true;
+        if (line.find("sub i32") != std::string::npos) saw_sub = true;
+        if (line.find("store i8 %22, ptr %24") != std::string::npos) saw_digit_store = true;
+        if (line == "ret ptr %1") saw_ret = true;
     }
-    REQUIRE(saw_zero_store && saw_udiv && saw_digit_store && saw_ret);
-
-    int digits = 0;
-    int temp = num;
-    while (temp > 0) {
-        digits++;
-        temp /= 10;
-    }
-
-    if (digits == 0) return "";
-
-    std::string out;
-    out.resize((size_t)digits);
-    while (num > 0) {
-        out[(size_t)--digits] = (char)('0' + (num % 10));
-        num /= 10;
-    }
-    return out;
+    REQUIRE(saw_udiv && saw_mul && saw_sub && saw_digit_store && saw_ret);
 }
 
-static std::vector<WriteChunk> lower_print_i64_from_ir(const ProgramIR &program, int64_t n) {
-    bool saw_trunc = false;
+static void validate_print_i64_ir(const ProgramIR &program) {
     bool saw_convert = false;
     bool saw_strlen = false;
-    bool saw_write = false;
-    bool saw_nl_write = false;
+    bool saw_write_digits = false;
+    bool saw_write_nl = false;
     bool saw_ret = false;
-
-    int32_t n32 = 0;
-    std::string digits;
-    uint16_t len_value = 0;
     for (const std::string &line : program.print_i64_body) {
-        if (line == "%n32 = trunc i64 %n to i32") {
-            n32 = (int32_t)n;
-            saw_trunc = true;
-            continue;
-        }
-        if (line == "%s = call ptr @int_to_string(i32 %n32, ptr @itoa_buf)") {
-            REQUIRE(saw_trunc);
-            digits = lower_int_to_string_from_ir(program, n32);
-            saw_convert = true;
-            continue;
-        }
-        if (line == "%len = call i64 @strlen(ptr %s)") {
-            REQUIRE(saw_convert);
-            REQUIRE(digits.size() <= 0xffff);
-            len_value = (uint16_t)digits.size();
-            saw_strlen = true;
-            continue;
-        }
-        if (line == "%written = call i64 @write(i32 1, ptr %s, i64 %len)") {
-            REQUIRE(saw_strlen);
-            saw_write = true;
-            continue;
-        }
-        if (line == "%nl_written = call i64 @write(i32 1, ptr @nl, i64 1)") {
-            REQUIRE(saw_write);
-            saw_nl_write = true;
-            continue;
-        }
-        if (line == "ret void") {
-            saw_ret = true;
-            continue;
-        }
-        REQUIRE(false);
+        if (line == "%s = call ptr @int_to_string(i32 %n32, ptr @itoa_buf)") saw_convert = true;
+        if (line == "%len = call i64 @strlen(ptr %s)") saw_strlen = true;
+        if (line == "%written = call i64 @write(i32 1, ptr %s, i64 %len)") saw_write_digits = true;
+        if (line == "%nl_written = call i64 @write(i32 1, ptr @nl, i64 1)") saw_write_nl = true;
+        if (line == "ret void") saw_ret = true;
     }
-    REQUIRE(saw_trunc && saw_convert && saw_strlen && saw_write && saw_nl_write && saw_ret);
-    std::vector<WriteChunk> chunks;
-    chunks.push_back(WriteChunk{.bytes = digits, .len = len_value});
-    chunks.push_back(WriteChunk{.bytes = "\n", .len = 1});
-    return chunks;
+    REQUIRE(saw_convert && saw_strlen && saw_write_digits && saw_write_nl && saw_ret);
 }
 
-static WritePlan build_write_plan(const ProgramIR &program) {
-    WritePlan plan;
-    for (const Operation &op : program.ops) {
-        if (op.kind == OpKind::WriteGlobal) {
-            const auto it = program.globals.find(op.symbol);
-            REQUIRE(it != program.globals.end());
-            REQUIRE(op.value >= 0);
-            REQUIRE((size_t)op.value <= it->second.size());
-            REQUIRE(op.value <= 0xffff);
-            WriteChunk chunk = {
-                .bytes = it->second.substr(0, (size_t)op.value),
-                .len = (uint16_t)op.value,
-            };
-            plan.chunks.push_back(chunk);
-            plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
-            append_u8(plan.cstring_bytes, 0);
-            continue;
-        }
-        if (op.kind == OpKind::PrintI64) {
-            const std::vector<WriteChunk> chunks = lower_print_i64_from_ir(program, op.value);
-            for (const WriteChunk &chunk : chunks) {
-                plan.chunks.push_back(chunk);
-                plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
-                append_u8(plan.cstring_bytes, 0);
-            }
-            continue;
-        }
-    }
-    REQUIRE(!plan.chunks.empty());
-    return plan;
-}
-
-static std::vector<ResolvedWriteChunk> resolve_write_chunks(const WritePlan &plan, uint64_t cstring_addr) {
-    std::vector<ResolvedWriteChunk> resolved;
+static CStringPlan build_cstring_plan(const ProgramIR &program, uint64_t cstring_addr) {
+    CStringPlan plan;
     uint64_t addr = cstring_addr;
-    for (const WriteChunk &chunk : plan.chunks) {
-        resolved.push_back(ResolvedWriteChunk{addr, chunk.len});
-        addr += (uint64_t)chunk.bytes.size() + 1;
+    for (const std::string &name : program.global_order) {
+        const auto it = program.globals.find(name);
+        REQUIRE(it != program.globals.end());
+        plan.addr[name] = addr;
+        plan.bytes.insert(plan.bytes.end(), it->second.begin(), it->second.end());
+        append_u8(plan.bytes, 0);
+        addr += (uint64_t)it->second.size() + 1;
     }
-    return resolved;
-}
-
-static std::vector<uint8_t> build_text_bytes(const ProgramIR &program,
-        uint64_t text_addr,
-        uint64_t stubs_addr,
-        const std::vector<ResolvedWriteChunk> &writes) {
-    const uint64_t exit_stub_addr = stubs_addr + 0x0;
-    const uint64_t write_stub_addr = stubs_addr + 0xc;
-
-    std::vector<uint8_t> out;
-    size_t write_idx = 0;
-    bool saw_exit = false;
-    for (const Operation &op : program.ops) {
-        switch (op.kind) {
-            case OpKind::WriteGlobal: {
-                REQUIRE(write_idx < writes.size());
-                const ResolvedWriteChunk w = writes[write_idx++];
-                const uint64_t adrp_addr = text_addr + out.size() + 4;
-                const uint64_t bl_addr = text_addr + out.size() + 16;
-                emit_arm64(out, arm64_movz_64(0, 1, 0));
-                emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(adrp_addr, w.addr)));
-                emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(w.addr & 0xfffU), 0));
-                emit_arm64(out, arm64_movz_64(2, w.len, 0));
-                emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, write_stub_addr)));
-                break;
-            }
-            case OpKind::PrintI64: {
-                for (int i = 0; i < 2; i++) {
-                    REQUIRE(write_idx < writes.size());
-                    const ResolvedWriteChunk w = writes[write_idx++];
-                    const uint64_t adrp_addr = text_addr + out.size() + 4;
-                    const uint64_t bl_addr = text_addr + out.size() + 16;
-                    emit_arm64(out, arm64_movz_64(0, 1, 0));
-                    emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(adrp_addr, w.addr)));
-                    emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(w.addr & 0xfffU), 0));
-                    emit_arm64(out, arm64_movz_64(2, w.len, 0));
-                    emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, write_stub_addr)));
-                }
-                break;
-            }
-            case OpKind::ExitCode: {
-                REQUIRE(op.value >= 0 && op.value <= 0xffff);
-                const uint64_t bl_addr = text_addr + out.size() + 4;
-                emit_arm64(out, arm64_movz_64(0, (uint16_t)op.value, 0));
-                emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, exit_stub_addr)));
-                saw_exit = true;
-                break;
-            }
-            case OpKind::ReturnCode: {
-                REQUIRE(op.value >= 0 && op.value <= 0xffff);
-                emit_arm64(out, arm64_movz_64(0, (uint16_t)op.value, 0));
-                emit_arm64(out, arm64_ret());
-                break;
-            }
-        }
-    }
-    REQUIRE(saw_exit);
-    REQUIRE(write_idx == writes.size());
-    REQUIRE((out.size() % 4) == 0);
-    return out;
+    return plan;
 }
 
 static size_t op_encoded_size(const Operation &op) {
     switch (op.kind) {
         case OpKind::WriteGlobal: return 5 * 4;
-        case OpKind::PrintI64: return 10 * 4;
+        case OpKind::PrintI64: return 2 * 4;
         case OpKind::ExitCode: return 2 * 4;
         case OpKind::ReturnCode: return 2 * 4;
     }
     REQUIRE(false);
+}
+
+static size_t print_i64_encoded_size() {
+    return 22 * 4;
+}
+
+static size_t int_to_string_encoded_size() {
+    return 23 * 4;
+}
+
+static std::vector<uint8_t> build_int_to_string_bytes() {
+    AsmBuilder a;
+    asm_emit_cbzw_to(a, 0, "zero");
+    asm_emit(a, arm64_add_imm_32(2, 0, 0));      // w2 = w0
+    asm_emit(a, arm64_movz_64(3, 0, 0));         // x3 = 0
+    asm_emit(a, arm64_movz_64(10, 10, 0));       // w10 = 10
+    asm_label(a, "count");
+    asm_emit_cbzw_to(a, 2, "count_done");
+    asm_emit(a, arm64_add_imm_64(3, 3, 1, 0));   // x3++
+    asm_emit(a, arm64_udiv_32(2, 2, 10));        // w2 /= 10
+    asm_emit_b_to(a, "count");
+    asm_label(a, "count_done");
+    asm_emit(a, arm64_add_reg_64(4, 1, 3));      // x4 = x1 + x3
+    asm_emit(a, arm64_strb_uimm(31, 4, 0));      // *x4 = 0
+    asm_emit(a, arm64_add_imm_32(5, 0, 0));      // w5 = w0
+    asm_label(a, "fill");
+    asm_emit_cbzw_to(a, 5, "ret");
+    asm_emit(a, arm64_udiv_32(6, 5, 10));        // w6 = w5 / 10
+    asm_emit(a, arm64_mul_32(7, 6, 10));         // w7 = w6 * 10
+    asm_emit(a, arm64_sub_reg_32(8, 5, 7));      // w8 = w5 - w7
+    asm_emit(a, arm64_add_imm_32(8, 8, 48));     // w8 += '0'
+    asm_emit(a, arm64_sub_imm_64(4, 4, 1));      // x4--
+    asm_emit(a, arm64_strb_uimm(8, 4, 0));       // *x4 = digit
+    asm_emit(a, arm64_add_imm_32(5, 6, 0));      // w5 = w6
+    asm_emit_b_to(a, "fill");
+    asm_label(a, "zero");
+    asm_emit(a, arm64_strb_uimm(31, 1, 0));      // *x1 = 0
+    asm_label(a, "ret");
+    asm_emit(a, arm64_add_imm_64(0, 1, 0, 0));   // x0 = x1
+    asm_emit(a, arm64_ret());
+    asm_resolve_patches(a);
+    return asm_to_bytes(a);
+}
+
+static std::vector<uint8_t> build_print_i64_bytes(uint64_t func_addr,
+        uint64_t int_to_string_addr,
+        uint64_t write_stub_addr,
+        uint64_t nl_addr) {
+    AsmBuilder a;
+    asm_emit(a, arm64_sub_imm_64(31, 31, 64));   // sub sp, sp, #64
+    asm_emit(a, arm64_add_imm_64(9, 0, 0, 0));   // x9 = x0
+    asm_emit(a, arm64_add_imm_64(1, 31, 0, 0));  // x1 = sp
+    asm_emit(a, arm64_add_imm_32(0, 9, 0));      // w0 = w9
+
+    {
+        const uint64_t at = func_addr + a.words.size() * 4;
+        asm_emit(a, arm64_bl(arm64_bl_imm26_from_addrs(at, int_to_string_addr)));
+    }
+
+    asm_emit(a, arm64_add_imm_64(1, 0, 0, 0));   // x1 = x0
+    asm_emit(a, arm64_movz_64(2, 0, 0));         // x2 = 0
+    asm_emit(a, arm64_add_imm_64(4, 1, 0, 0));   // x4 = x1
+    asm_label(a, "strlen");
+    asm_emit(a, arm64_ldrb_uimm(3, 4, 0));       // w3 = *x4
+    asm_emit_cbzw_to(a, 3, "strlen_done");
+    asm_emit(a, arm64_add_imm_64(4, 4, 1, 0));   // x4++
+    asm_emit(a, arm64_add_imm_64(2, 2, 1, 0));   // x2++
+    asm_emit_b_to(a, "strlen");
+    asm_label(a, "strlen_done");
+    asm_emit(a, arm64_movz_64(0, 1, 0));         // x0 = 1
+
+    {
+        const uint64_t at = func_addr + a.words.size() * 4;
+        asm_emit(a, arm64_bl(arm64_bl_imm26_from_addrs(at, write_stub_addr)));
+    }
+
+    asm_emit(a, arm64_movz_64(0, 1, 0));         // x0 = 1
+    {
+        const uint64_t at = func_addr + a.words.size() * 4;
+        asm_emit(a, arm64_adrp(1, arm64_adrp_page_delta(at, nl_addr)));
+    }
+    asm_emit(a, arm64_add_imm_64(1, 1, (uint16_t)(nl_addr & 0xfffU), 0));
+    asm_emit(a, arm64_movz_64(2, 1, 0));         // x2 = 1
+    {
+        const uint64_t at = func_addr + a.words.size() * 4;
+        asm_emit(a, arm64_bl(arm64_bl_imm26_from_addrs(at, write_stub_addr)));
+    }
+    asm_emit(a, arm64_add_imm_64(31, 31, 64, 0)); // add sp, sp, #64
+    asm_emit(a, arm64_ret());
+    asm_resolve_patches(a);
+    return asm_to_bytes(a);
+}
+
+static std::vector<uint8_t> build_main_bytes(const ProgramIR &program,
+        uint64_t main_addr,
+        uint64_t write_stub_addr,
+        uint64_t exit_stub_addr,
+        uint64_t print_i64_addr,
+        const std::unordered_map<std::string, uint64_t> &global_addr) {
+    std::vector<uint8_t> out;
+    for (const Operation &op : program.ops) {
+        if (op.kind == OpKind::WriteGlobal) {
+            const auto it = global_addr.find(op.symbol);
+            REQUIRE(it != global_addr.end());
+            REQUIRE(op.value >= 0 && op.value <= 0xffff);
+            const uint64_t str_addr = it->second;
+            const uint64_t adrp_addr = main_addr + out.size() + 4;
+            const uint64_t bl_addr = main_addr + out.size() + 16;
+            emit_arm64(out, arm64_movz_64(0, 1, 0));
+            emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(adrp_addr, str_addr)));
+            emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(str_addr & 0xfffU), 0));
+            emit_arm64(out, arm64_movz_64(2, (uint16_t)op.value, 0));
+            emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, write_stub_addr)));
+            continue;
+        }
+        if (op.kind == OpKind::PrintI64) {
+            REQUIRE(op.value >= 0 && op.value <= 0xffff);
+            const uint64_t bl_addr = main_addr + out.size() + 4;
+            emit_arm64(out, arm64_movz_64(0, (uint16_t)op.value, 0));
+            emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, print_i64_addr)));
+            continue;
+        }
+        if (op.kind == OpKind::ExitCode) {
+            REQUIRE(op.value >= 0 && op.value <= 0xffff);
+            const uint64_t bl_addr = main_addr + out.size() + 4;
+            emit_arm64(out, arm64_movz_64(0, (uint16_t)op.value, 0));
+            emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, exit_stub_addr)));
+            continue;
+        }
+        if (op.kind == OpKind::ReturnCode) {
+            REQUIRE(op.value >= 0 && op.value <= 0xffff);
+            emit_arm64(out, arm64_movz_64(0, (uint16_t)op.value, 0));
+            emit_arm64(out, arm64_ret());
+            continue;
+        }
+        REQUIRE(false);
+    }
+    return out;
 }
 
 static std::vector<uint8_t> build_stub_bytes(uint64_t stubs_addr, uint64_t got_addr) {
@@ -829,6 +931,8 @@ static std::vector<uint8_t> build_code_signature_blob(
 
 int main() {
     const ProgramIR program = parse_program_ir(kLlvmIr);
+    validate_int_to_string_ir(program);
+    validate_print_i64_ir(program);
     std::cout << "Parsed LLVM IR ops:\n";
     for (const Operation &op : program.ops) {
         if (op.kind == OpKind::WriteGlobal) std::cout << "  write(@" << op.symbol << ", len=" << op.value << ")\n";
@@ -837,17 +941,41 @@ int main() {
         if (op.kind == OpKind::ReturnCode) std::cout << "  ret " << op.value << "\n";
     }
 
-    const WritePlan write_plan = build_write_plan(program);
     const uint64_t text_fileoff = 1040;
     const uint64_t text_addr = 0x100000000ULL + text_fileoff;
-    size_t text_size = 0;
-    for (const Operation &op : program.ops) text_size += op_encoded_size(op);
+    size_t main_size = 0;
+    for (const Operation &op : program.ops) main_size += op_encoded_size(op);
+    const size_t print_size = print_i64_encoded_size();
+    const size_t int_to_string_size = int_to_string_encoded_size();
+    const size_t text_size = main_size + print_size + int_to_string_size;
+    const uint64_t main_addr = text_addr;
+    const uint64_t print_addr = main_addr + main_size;
+    const uint64_t int_to_string_addr = print_addr + print_size;
     const uint64_t stubs_addr = text_addr + text_size;
     const uint64_t cstring_addr = stubs_addr + 24;
-    const std::vector<ResolvedWriteChunk> resolved_writes = resolve_write_chunks(write_plan, cstring_addr);
-    const std::vector<uint8_t> text = build_text_bytes(program, text_addr, stubs_addr, resolved_writes);
+
+    const CStringPlan cstring_plan = build_cstring_plan(program, cstring_addr);
+    const auto it_nl = cstring_plan.addr.find("nl");
+    REQUIRE(it_nl != cstring_plan.addr.end());
+    const uint64_t nl_addr = it_nl->second;
+    const uint64_t write_stub_addr = stubs_addr + 0xc;
+    const uint64_t exit_stub_addr = stubs_addr + 0x0;
+
+    const std::vector<uint8_t> main_text = build_main_bytes(program, main_addr, write_stub_addr, exit_stub_addr, print_addr, cstring_plan.addr);
+    const std::vector<uint8_t> print_text = build_print_i64_bytes(print_addr, int_to_string_addr, write_stub_addr, nl_addr);
+    const std::vector<uint8_t> int_to_string_text = build_int_to_string_bytes();
+    REQUIRE(main_text.size() == main_size);
+    REQUIRE(print_text.size() == print_size);
+    REQUIRE(int_to_string_text.size() == int_to_string_size);
+
+    std::vector<uint8_t> text;
+    text.reserve(text_size);
+    text.insert(text.end(), main_text.begin(), main_text.end());
+    text.insert(text.end(), print_text.begin(), print_text.end());
+    text.insert(text.end(), int_to_string_text.begin(), int_to_string_text.end());
+
     const std::vector<uint8_t> stubs = build_stub_bytes(stubs_addr, 0x100004000ULL);
-    const std::vector<uint8_t> cstr = write_plan.cstring_bytes;
+    const std::vector<uint8_t> cstr = cstring_plan.bytes;
     const std::vector<uint8_t> got = build_got_bytes();
 
     std::vector<uint8_t> data;
@@ -992,8 +1120,10 @@ int main() {
     std::vector<uint8_t> symtab;
     std::vector<uint8_t> indirect_syms;
     std::vector<uint8_t> strtab;
-    const uint64_t msg_addr = resolved_writes.empty() ? cstring_addr : resolved_writes[0].addr;
-    const uint64_t msg_len = resolved_writes.empty() ? 0 : resolved_writes[0].len;
+    const auto it_prefix = cstring_plan.addr.find("prefix");
+    REQUIRE(it_prefix != cstring_plan.addr.end());
+    const uint64_t msg_addr = it_prefix->second;
+    const uint64_t msg_len = 23;
     build_symbol_and_string_tables(symtab, indirect_syms, strtab, msg_addr, msg_len, text_addr);
     data.insert(data.end(), chained_fixups.begin(), chained_fixups.end());
     data.insert(data.end(), exports_trie.begin(), exports_trie.end());
