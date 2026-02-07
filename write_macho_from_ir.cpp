@@ -23,16 +23,61 @@
 static const char *kLlvmIr = R"IR(
 @prefix = private unnamed_addr constant [24 x i8] c"numbers via print_i64:\0A\00", align 1
 @suffix = private unnamed_addr constant [7 x i8] c"done.\0A\00", align 1
+@nl = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@itoa_buf = global [32 x i8] zeroinitializer, align 1
 
 declare i64 @write(i32, ptr, i64)
 declare void @exit(i32)
-declare ptr @i64_to_ascii_nl(i64)
 declare i64 @strlen(ptr)
+
+define noundef ptr @int_to_string(i32 noundef %0, ptr noundef returned writeonly %1) local_unnamed_addr {
+  %3 = icmp sgt i32 %0, 0
+  br i1 %3, label %5, label %4
+
+4:
+  store i8 0, ptr %1, align 1
+  br label %26
+
+5:
+  %6 = phi i32 [ %9, %5 ], [ %0, %2 ]
+  %7 = phi i32 [ %8, %5 ], [ 0, %2 ]
+  %8 = add nuw nsw i32 %7, 1
+  %9 = udiv i32 %6, 10
+  %10 = icmp ult i32 %6, 10
+  br i1 %10, label %11, label %5
+
+11:
+  %12 = zext nneg i32 %8 to i64
+  %13 = getelementptr inbounds i8, ptr %1, i64 %12
+  store i8 0, ptr %13, align 1
+  br i1 %3, label %14, label %26
+
+14:
+  %15 = phi i64 [ %23, %14 ], [ %12, %11 ]
+  %16 = phi i32 [ %18, %14 ], [ %0, %11 ]
+  %17 = freeze i32 %16
+  %18 = udiv i32 %17, 10
+  %19 = mul i32 %18, 10
+  %20 = sub i32 %17, %19
+  %21 = trunc nuw nsw i32 %20 to i8
+  %22 = or disjoint i8 %21, 48
+  %23 = add nsw i64 %15, -1
+  %24 = getelementptr inbounds i8, ptr %1, i64 %23
+  store i8 %22, ptr %24, align 1
+  %25 = icmp ult i32 %16, 10
+  br i1 %25, label %26, label %14
+
+26:
+  ret ptr %1
+}
+
 define void @print_i64(i64 %n) {
 entry:
-  %s = call ptr @i64_to_ascii_nl(i64 %n)
+  %n32 = trunc i64 %n to i32
+  %s = call ptr @int_to_string(i32 %n32, ptr @itoa_buf)
   %len = call i64 @strlen(ptr %s)
   %written = call i64 @write(i32 1, ptr %s, i64 %len)
+  %nl_written = call i64 @write(i32 1, ptr @nl, i64 1)
   ret void
 }
 
@@ -64,6 +109,7 @@ struct Operation {
 
 struct ProgramIR {
     std::unordered_map<std::string, std::string> globals;
+    std::vector<std::string> int_to_string_body;
     std::vector<std::string> print_i64_body;
     std::vector<Operation> ops;
 };
@@ -213,6 +259,7 @@ static std::string decode_llvm_c_string(const std::string &encoded) {
 static ProgramIR parse_program_ir(const std::string &ir_text) {
     ProgramIR program;
     bool in_main = false;
+    bool in_int_to_string = false;
     bool in_print_i64 = false;
     size_t start = 0;
     while (start <= ir_text.size()) {
@@ -228,10 +275,14 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
                 program.globals[global_name] = decode_llvm_c_string(line.substr(cpos + 2, qend - (cpos + 2)));
             } else if (line.rfind("define i32 @main(", 0) == 0) {
                 in_main = true;
+            } else if (line.rfind("define noundef ptr @int_to_string(", 0) == 0) {
+                in_int_to_string = true;
             } else if (line.rfind("define void @print_i64(", 0) == 0) {
                 in_print_i64 = true;
             } else if (in_main && line == "}") {
                 in_main = false;
+            } else if (in_int_to_string && line == "}") {
+                in_int_to_string = false;
             } else if (in_print_i64 && line == "}") {
                 in_print_i64 = false;
             } else if (in_main && line.find("@write(") != std::string::npos) {
@@ -241,6 +292,8 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
             } else if (in_main && line.find("call void @print_i64(") != std::string::npos) {
                 const int64_t value = parse_i64_after_last(line, "i64 ");
                 program.ops.push_back(Operation{OpKind::PrintI64, "", value});
+            } else if (in_int_to_string) {
+                program.int_to_string_body.push_back(line);
             } else if (in_print_i64 && line != "entry:") {
                 program.print_i64_body.push_back(line);
             } else if (in_main && line.find("call void @exit(") != std::string::npos) {
@@ -256,6 +309,7 @@ static ProgramIR parse_program_ir(const std::string &ir_text) {
     }
 
     REQUIRE(!program.globals.empty());
+    REQUIRE(!program.int_to_string_body.empty());
     REQUIRE(!program.print_i64_body.empty());
     REQUIRE(!program.ops.empty());
     return program;
@@ -342,30 +396,76 @@ struct WritePlan {
     std::vector<uint8_t> cstring_bytes;
 };
 
-static std::string i64_to_ascii_nl(int64_t value) {
-    std::string s = std::to_string(value);
-    s.push_back('\n');
-    return s;
+static std::string lower_int_to_string_from_ir(const ProgramIR &program, int32_t num) {
+    bool saw_zero_store = false;
+    bool saw_udiv = false;
+    bool saw_digit_store = false;
+    bool saw_ret = false;
+    for (const std::string &line : program.int_to_string_body) {
+        if (line.find("store i8 0, ptr %1") != std::string::npos) {
+            saw_zero_store = true;
+            continue;
+        }
+        if (line.find("udiv i32") != std::string::npos) {
+            saw_udiv = true;
+            continue;
+        }
+        if (line.find("store i8 %22, ptr %24") != std::string::npos) {
+            saw_digit_store = true;
+            continue;
+        }
+        if (line == "ret ptr %1") {
+            saw_ret = true;
+            continue;
+        }
+    }
+    REQUIRE(saw_zero_store && saw_udiv && saw_digit_store && saw_ret);
+
+    int digits = 0;
+    int temp = num;
+    while (temp > 0) {
+        digits++;
+        temp /= 10;
+    }
+
+    if (digits == 0) return "";
+
+    std::string out;
+    out.resize((size_t)digits);
+    while (num > 0) {
+        out[(size_t)--digits] = (char)('0' + (num % 10));
+        num /= 10;
+    }
+    return out;
 }
 
-static WriteChunk lower_print_i64_from_ir(const ProgramIR &program, int64_t n) {
+static std::vector<WriteChunk> lower_print_i64_from_ir(const ProgramIR &program, int64_t n) {
+    bool saw_trunc = false;
     bool saw_convert = false;
     bool saw_strlen = false;
     bool saw_write = false;
+    bool saw_nl_write = false;
     bool saw_ret = false;
 
-    std::string s_value;
+    int32_t n32 = 0;
+    std::string digits;
     uint16_t len_value = 0;
     for (const std::string &line : program.print_i64_body) {
-        if (line == "%s = call ptr @i64_to_ascii_nl(i64 %n)") {
-            s_value = i64_to_ascii_nl(n);
+        if (line == "%n32 = trunc i64 %n to i32") {
+            n32 = (int32_t)n;
+            saw_trunc = true;
+            continue;
+        }
+        if (line == "%s = call ptr @int_to_string(i32 %n32, ptr @itoa_buf)") {
+            REQUIRE(saw_trunc);
+            digits = lower_int_to_string_from_ir(program, n32);
             saw_convert = true;
             continue;
         }
         if (line == "%len = call i64 @strlen(ptr %s)") {
             REQUIRE(saw_convert);
-            REQUIRE(s_value.size() <= 0xffff);
-            len_value = (uint16_t)s_value.size();
+            REQUIRE(digits.size() <= 0xffff);
+            len_value = (uint16_t)digits.size();
             saw_strlen = true;
             continue;
         }
@@ -374,14 +474,22 @@ static WriteChunk lower_print_i64_from_ir(const ProgramIR &program, int64_t n) {
             saw_write = true;
             continue;
         }
+        if (line == "%nl_written = call i64 @write(i32 1, ptr @nl, i64 1)") {
+            REQUIRE(saw_write);
+            saw_nl_write = true;
+            continue;
+        }
         if (line == "ret void") {
             saw_ret = true;
             continue;
         }
         REQUIRE(false);
     }
-    REQUIRE(saw_convert && saw_strlen && saw_write && saw_ret);
-    return WriteChunk{.bytes = s_value, .len = len_value};
+    REQUIRE(saw_trunc && saw_convert && saw_strlen && saw_write && saw_nl_write && saw_ret);
+    std::vector<WriteChunk> chunks;
+    chunks.push_back(WriteChunk{.bytes = digits, .len = len_value});
+    chunks.push_back(WriteChunk{.bytes = "\n", .len = 1});
+    return chunks;
 }
 
 static WritePlan build_write_plan(const ProgramIR &program) {
@@ -403,10 +511,12 @@ static WritePlan build_write_plan(const ProgramIR &program) {
             continue;
         }
         if (op.kind == OpKind::PrintI64) {
-            WriteChunk chunk = lower_print_i64_from_ir(program, op.value);
-            plan.chunks.push_back(chunk);
-            plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
-            append_u8(plan.cstring_bytes, 0);
+            const std::vector<WriteChunk> chunks = lower_print_i64_from_ir(program, op.value);
+            for (const WriteChunk &chunk : chunks) {
+                plan.chunks.push_back(chunk);
+                plan.cstring_bytes.insert(plan.cstring_bytes.end(), chunk.bytes.begin(), chunk.bytes.end());
+                append_u8(plan.cstring_bytes, 0);
+            }
             continue;
         }
     }
@@ -436,8 +546,7 @@ static std::vector<uint8_t> build_text_bytes(const ProgramIR &program,
     bool saw_exit = false;
     for (const Operation &op : program.ops) {
         switch (op.kind) {
-            case OpKind::WriteGlobal:
-            case OpKind::PrintI64: {
+            case OpKind::WriteGlobal: {
                 REQUIRE(write_idx < writes.size());
                 const ResolvedWriteChunk w = writes[write_idx++];
                 const uint64_t adrp_addr = text_addr + out.size() + 4;
@@ -447,6 +556,20 @@ static std::vector<uint8_t> build_text_bytes(const ProgramIR &program,
                 emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(w.addr & 0xfffU), 0));
                 emit_arm64(out, arm64_movz_64(2, w.len, 0));
                 emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, write_stub_addr)));
+                break;
+            }
+            case OpKind::PrintI64: {
+                for (int i = 0; i < 2; i++) {
+                    REQUIRE(write_idx < writes.size());
+                    const ResolvedWriteChunk w = writes[write_idx++];
+                    const uint64_t adrp_addr = text_addr + out.size() + 4;
+                    const uint64_t bl_addr = text_addr + out.size() + 16;
+                    emit_arm64(out, arm64_movz_64(0, 1, 0));
+                    emit_arm64(out, arm64_adrp(1, arm64_adrp_page_delta(adrp_addr, w.addr)));
+                    emit_arm64(out, arm64_add_imm_64(1, 1, (uint16_t)(w.addr & 0xfffU), 0));
+                    emit_arm64(out, arm64_movz_64(2, w.len, 0));
+                    emit_arm64(out, arm64_bl(arm64_bl_imm26_from_addrs(bl_addr, write_stub_addr)));
+                }
                 break;
             }
             case OpKind::ExitCode: {
@@ -474,7 +597,7 @@ static std::vector<uint8_t> build_text_bytes(const ProgramIR &program,
 static size_t op_encoded_size(const Operation &op) {
     switch (op.kind) {
         case OpKind::WriteGlobal: return 5 * 4;
-        case OpKind::PrintI64: return 5 * 4;
+        case OpKind::PrintI64: return 10 * 4;
         case OpKind::ExitCode: return 2 * 4;
         case OpKind::ReturnCode: return 2 * 4;
     }
